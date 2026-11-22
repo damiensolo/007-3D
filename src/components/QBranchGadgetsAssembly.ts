@@ -637,6 +637,7 @@ export function createQBranchGadgetsRig(): QBranchGadgetsRig {
 
   const smokePoints = new THREE.Points(smokeGeo, smokeMat);
   smokePoints.frustumCulled = false;
+  smokePoints.renderOrder = 50; // Always render after transparent car glass, lights, dashboard, and badges
   root.add(smokePoints);
 
   // --- B. Pressurized Oil Slick Arc Stream (InstancedMesh) + Wet Specular Iridescent Puddle ---
@@ -653,11 +654,12 @@ export function createQBranchGadgetsRig(): QBranchGadgetsRig {
   }
   const oilDropGeo = new THREE.SphereGeometry(0.016, 8, 6);
   const oilDropMat = new THREE.MeshPhysicalMaterial({
-    color: 0x070709,
-    roughness: 0.04,
-    metalness: 0.15,
-    clearcoat: 1.0,
-    clearcoatRoughness: 0.02,
+    color: 0x050507,
+    roughness: 0.08,
+    metalness: 0.05,
+    clearcoat: 0.55,
+    clearcoatRoughness: 0.08,
+    envMapIntensity: 0.25,
   });
   const oilInstanced = new THREE.InstancedMesh(oilDropGeo, oilDropMat, OIL_COUNT);
   oilInstanced.frustumCulled = false;
@@ -711,11 +713,13 @@ export function createQBranchGadgetsRig(): QBranchGadgetsRig {
         float warp = n1 * 0.38 + n2 * 0.14;
 
         // Twin pressurized oil streams merging into a thick, irregular asphalt slick
-        float d1 = length(vec2((p.x - 0.22) * 1.65, p.y * 0.92)) - warp * 0.52;
-        float d2 = length(vec2((p.x + 0.22) * 1.65, p.y * 0.92)) - warp * 0.52;
+        // Keep radius <= 0.56 and apply smooth boundary containment so it never clips against plane edges
+        float d1 = length(vec2((p.x - 0.16) * 1.85, p.y * 1.15)) - warp * 0.34;
+        float d2 = length(vec2((p.x + 0.16) * 1.85, p.y * 1.15)) - warp * 0.34;
         float d = min(d1, d2);
-        float radius = mix(0.06, 0.88, uSpread);
-        float mask = 1.0 - smoothstep(radius - 0.07, radius, d);
+        float radius = mix(0.05, 0.56, uSpread);
+        float edgeContain = smoothstep(0.98, 0.78, max(abs(p.x), abs(p.y)));
+        float mask = (1.0 - smoothstep(radius - 0.06, radius, d)) * edgeContain;
         if (mask <= 0.01) discard;
 
         // View-dependent Fresnel + wet studio softbox specular reflection
@@ -739,9 +743,10 @@ export function createQBranchGadgetsRig(): QBranchGadgetsRig {
     `,
   });
 
-  const oilPuddle = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 4.2), oilPuddleMat);
+  const oilPuddle = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 5.4), oilPuddleMat);
   oilPuddle.rotation.x = -Math.PI / 2;
-  oilPuddle.position.set(0, 0.023, -3.95);
+  oilPuddle.position.set(0, 0.023, -4.15);
+  oilPuddle.renderOrder = 1;
   root.add(oilPuddle);
 
   return {
