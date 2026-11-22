@@ -211,11 +211,6 @@ export function createQBranchGadgetsRig(): QBranchGadgetsRig {
     metalness: 0.84,
     roughness: 0.34,
   });
-  const armorSteelMat = new THREE.MeshStandardMaterial({
-    color: 0x1e2229,
-    metalness: 0.88,
-    roughness: 0.38,
-  });
   const brassMat = new THREE.MeshStandardMaterial({
     color: 0xd4a038,
     metalness: 0.88,
@@ -422,45 +417,166 @@ export function createQBranchGadgetsRig(): QBranchGadgetsRig {
   ];
 
   // =========================================================================
-  // 3. BULLET-RESISTANT REAR ARMOR SHIELD
+  // 3. BULLET-RESISTANT REAR ARMOR SHIELD (Recessed Boot Cutout + Planar Plate)
   // =========================================================================
+  // Planar in Z (z = -1.71), matched to SK_Trunk_101 surface y(x, z) = 0.998 + 0.454*(z + 1.71) - 0.38*x^2
+  const SHIELD_Z = -1.71;
+  const SHIELD_HALF_W = 0.352;
+  const trunkYAt = (x: number, zOffset = 0) => 0.998 + 0.454 * zOffset - 0.38 * x * x;
+
+  const buildCrownedPlanarGeo = (
+    halfW: number,
+    thicknessZ: number,
+    height: number,
+    topYOffset: (x: number) => number,
+    botYOffset: (x: number) => number,
+    segs = 32
+  ): THREE.BufferGeometry => {
+    const positions: number[] = [];
+    const indices: number[] = [];
+    const halfT = thicknessZ / 2;
+
+    for (let i = 0; i <= segs; i++) {
+      const u = i / segs;
+      const x = (u * 2 - 1) * halfW;
+      const yBot = botYOffset(x);
+      const yTop = height + topYOffset(x);
+      positions.push(
+        x, yBot, +halfT,
+        x, yTop, +halfT,
+        x, yTop, -halfT,
+        x, yBot, -halfT
+      );
+    }
+
+    for (let i = 0; i < segs; i++) {
+      const a = i * 4;
+      const b = (i + 1) * 4;
+      indices.push(a + 0, b + 0, b + 1, a + 0, b + 1, a + 1);
+      indices.push(a + 1, b + 1, b + 2, a + 1, b + 2, a + 2);
+      indices.push(a + 2, b + 2, b + 3, a + 2, b + 3, a + 3);
+      indices.push(a + 3, b + 3, b + 0, a + 3, b + 0, a + 0);
+    }
+    indices.push(0, 1, 2, 0, 2, 3);
+    const last = segs * 4;
+    indices.push(last + 0, last + 2, last + 1, last + 0, last + 3, last + 2);
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    return geo;
+  };
+
+  // Contoured Silver Birch trunk deck bezel with beveled slot cutout & recessed dark pocket
+  const deckShape = new THREE.Shape();
+  const dw = 0.39;
+  const dl = 0.062;
+  deckShape.moveTo(-dw, -dl);
+  deckShape.lineTo(dw, -dl);
+  deckShape.lineTo(dw, dl);
+  deckShape.lineTo(-dw, dl);
+  deckShape.closePath();
+
+  const slotHole = new THREE.Path();
+  const sw = SHIELD_HALF_W + 0.006;
+  const sl = 0.011;
+  slotHole.moveTo(-sw, -sl);
+  slotHole.lineTo(sw, -sl);
+  slotHole.lineTo(sw, sl);
+  slotHole.lineTo(-sw, sl);
+  slotHole.closePath();
+  deckShape.holes.push(slotHole);
+
+  const deckGeo = new THREE.ExtrudeGeometry(deckShape, {
+    depth: 0.006,
+    bevelEnabled: true,
+    bevelThickness: 0.002,
+    bevelSize: 0.002,
+    bevelSegments: 2,
+    curveSegments: 16,
+  });
+  deckGeo.rotateX(-Math.PI / 2);
+  // Conform extruded deck bezel vertices to the exact SK_Trunk_101 surface curvature
+  const deckPos = deckGeo.attributes.position;
+  for (let i = 0; i < deckPos.count; i++) {
+    const vx = deckPos.getX(i);
+    const vy = deckPos.getY(i);
+    const vz = deckPos.getZ(i);
+    deckPos.setY(i, vy + trunkYAt(vx, vz) - 0.005);
+  }
+  deckGeo.computeVertexNormals();
+
+  const slotDeckSurround = register(
+    new THREE.Mesh(deckGeo, silverBirchMat),
+    'Bullet Shield Boot Deck Bezel',
+    'Silver Birch Beveled Trim',
+    'Flush contoured trunk-deck bezel framing the recessed bullet-shield opening.',
+    [0, 0.72, -1.15]
+  );
+  slotDeckSurround.position.set(0, 0, SHIELD_Z);
+  root.add(slotDeckSurround);
+
+  // Dark recessed inner pocket channel (4cm deep) inside the beveled cutout
+  const pocketGeo = buildCrownedPlanarGeo(
+    sw + 0.003,
+    0.022,
+    0.042,
+    (x) => trunkYAt(x, 0) - 0.042,
+    (x) => trunkYAt(x, 0) - 0.042,
+    32
+  );
+  const slotPocket = new THREE.Mesh(pocketGeo, rubberPadMat);
+  slotPocket.position.set(0, 0, SHIELD_Z);
+  root.add(slotPocket);
+
+  // Rising planar ballistic steel shield + flush Silver Birch top cap
+  // Bottom extends 14cm below the deck so it NEVER floats above the curved trunk sides
   const bulletShieldGroup = new THREE.Group();
-  bulletShieldGroup.position.set(0, 0.62, -1.52);
+  bulletShieldGroup.position.set(0, 0.672, SHIELD_Z);
   root.add(bulletShieldGroup);
 
-  const shieldShape = new THREE.Shape();
-  shieldShape.moveTo(-0.46, 0);
-  shieldShape.lineTo(0.46, 0);
-  shieldShape.lineTo(0.39, 0.34);
-  shieldShape.lineTo(-0.39, 0.34);
-  shieldShape.closePath();
-
-  const shieldGeo = new THREE.ExtrudeGeometry(shieldShape, {
-    depth: 0.014,
-    bevelEnabled: true,
-    bevelThickness: 0.003,
-    bevelSize: 0.003,
-    bevelSegments: 2,
+  const brushedArmorMat = new THREE.MeshStandardMaterial({
+    color: 0xb4bcc6,
+    metalness: 0.56,
+    roughness: 0.32,
   });
+
+  const shieldGeo = buildCrownedPlanarGeo(
+    SHIELD_HALF_W,
+    0.009,
+    0.326,
+    (x) => -0.38 * x * x,
+    () => -0.14,
+    32
+  );
   const shieldPlate = register(
-    new THREE.Mesh(shieldGeo, armorSteelMat),
+    new THREE.Mesh(shieldGeo, brushedArmorMat),
     'Bullet-Resistant Rear Shield',
-    'Hardened Ballistic Steel',
-    'Hydraulically raised armor plate protecting the cabin from rear small-arms fire.',
-    [0, 0.85, -1.2]
+    'Satin Ballistic Armor Steel',
+    'Planar hydraulic armor plate rising vertically from the recessed boot-deck slot.',
+    [0, 0.95, -1.25]
   );
   bulletShieldGroup.add(shieldPlate);
 
-  // Twin vertical stiffener ribs & hydraulic lift rods
-  for (const rx of [-0.26, 0.26]) {
-    const rib = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.30, 0.010), gunmetalMat);
-    rib.position.set(rx, 0.17, 0.016);
-    bulletShieldGroup.add(rib);
-
-    const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.32, 12), chromeMat);
-    strut.position.set(rx, 0.16, -0.012);
-    bulletShieldGroup.add(strut);
-  }
+  // Beveled Silver Birch top cap sitting flush inside the beveled cutout when stowed
+  const capGeo = buildCrownedPlanarGeo(
+    SHIELD_HALF_W + 0.003,
+    0.014,
+    0.007,
+    (x) => -0.38 * x * x,
+    (x) => -0.38 * x * x,
+    32
+  );
+  const shieldCap = register(
+    new THREE.Mesh(capGeo, silverBirchMat),
+    'Bullet Shield Top Cap',
+    'Silver Birch Aluminum Trim',
+    'Body-colored flush cap crowning the bullet-resistant rear shield.',
+    [0, 1.05, -1.25]
+  );
+  shieldCap.position.set(0, 0.324, 0);
+  bulletShieldGroup.add(shieldCap);
 
   // =========================================================================
   // 4. PASSENGER EJECTOR SEAT ROOF HATCH (RHD: Passenger = +X)
@@ -802,11 +918,9 @@ export function updateQBranchGadgetsRig(
   for (const r of rig.frontRams) r.position.z = rig.ramFrontExtend * 0.26;
   for (const r of rig.rearRams) r.position.z = rig.ramRearExtend * 0.26;
 
-  // 3. Bullet-Resistant Rear Shield (rises behind rear glass + matches fastback rake)
+  // 3. Bullet-Resistant Rear Shield (rises vertically out of the recessed boot-deck slot)
   rig.shieldExtend += ((state.bulletShield ? 1 : 0) - rig.shieldExtend) * Math.min(1, safeDt * 5.5);
-  rig.bulletShieldGroup.position.y = 0.60 + rig.shieldExtend * 0.44;
-  rig.bulletShieldGroup.position.z = -1.52 + rig.shieldExtend * 0.19;
-  rig.bulletShieldGroup.rotation.x = rig.shieldExtend * 0.36;
+  rig.bulletShieldGroup.position.y = 0.672 + rig.shieldExtend * 0.326;
 
   // 4. Passenger Ejector Seat Roof Hatch
   rig.hatchOpen += ((state.roofHatch ? 1 : 0) - rig.hatchOpen) * Math.min(1, safeDt * 6.5);
