@@ -162,66 +162,65 @@ function carveGunPortHoles(
 }
 
 /**
- * Locates the static factory gearshift (shaft, knob, and leather boot) in the
- * loaded DB5 cabin meshes and removes its triangles so the interactive Q-Branch
- * Gear-Knob Actuator replaces it seamlessly in-place with zero duplication.
+ * Locates the static factory gearshift (boot, shaft, knob, and shift-pattern cap)
+ * inside SM_Body_101 meshes, removes its triangles cleanly without touching seats
+ * or console trim, and returns its exact world-space base position and scale.
  */
 function findAndCarveOriginalGearshift(
-  cabinMeshes: THREE.Mesh[]
+  bodyCabinMeshes: THREE.Mesh[]
 ): { basePos: THREE.Vector3; scale: number } {
   const va = new THREE.Vector3();
   const vb = new THREE.Vector3();
   const vc = new THREE.Vector3();
   const centroid = new THREE.Vector3();
 
-  // 1. Find the factory gearshift in the center tunnel zone (between seats and dashboard)
-  //    Dashboard is at z > 0.40, seats are at |x| > 0.13, so [-0.10, 0.10] x [0.05, 0.32] isolates the shifter.
+  // 1. Measure the factory gearshift cluster inside SM_Body_101 (dead center tunnel at x~0, z~0.31)
   let sumX = 0;
   let sumZ = 0;
-  let maxY = -Infinity;
   let count = 0;
+  let bootMinY = Infinity;
+  let knobMaxY = -Infinity;
 
-  for (const mesh of cabinMeshes) {
+  for (const mesh of bodyCabinMeshes) {
     const mName = (Array.isArray(mesh.material) ? mesh.material[0]?.name : mesh.material?.name || '').toLowerCase();
-    if (mName.includes('carpet')) continue;
+    if (!mName.includes('cabin1') && !mName.includes('cabin_leather_a1') && !mName.includes('cabin_a1')) {
+      continue;
+    }
     const posAttr = mesh.geometry.attributes.position;
     if (!posAttr) continue;
     mesh.updateMatrixWorld(true);
     for (let i = 0; i < posAttr.count; i++) {
       va.fromBufferAttribute(posAttr, i).applyMatrix4(mesh.matrixWorld);
-      if (va.x > -0.10 && va.x < 0.10 && va.z > 0.05 && va.z < 0.32 && va.y > 0.76 && va.y < 1.12) {
-        if (va.y > 0.86) {
+      if (va.x > -0.065 && va.x < 0.065 && va.z > 0.25 && va.z < 0.38 && va.y > 0.455 && va.y < 0.720) {
+        if (mName.includes('cabin1') || mName.includes('cabin_a1')) {
           sumX += va.x;
           sumZ += va.z;
           count++;
         }
-        maxY = Math.max(maxY, va.y);
+        bootMinY = Math.min(bootMinY, va.y);
+        knobMaxY = Math.max(knobMaxY, va.y);
       }
     }
   }
 
   const gearX = count > 0 ? sumX / count : 0.0;
-  const gearZ = count > 0 ? sumZ / count : 0.20;
+  const gearZ = count > 0 ? sumZ / count : 0.311;
+  const tunnelY = bootMinY < Infinity ? bootMinY : 0.460;
+  const topY = knobMaxY > -Infinity ? knobMaxY : 0.708;
 
-  // 2. Measure exact tunnel carpet Y beneath the gearshift
-  const downRay = new THREE.Raycaster(
-    new THREE.Vector3(gearX, 1.35, gearZ),
-    new THREE.Vector3(0, -1, 0)
-  );
-  const carpetMeshes = cabinMeshes.filter((m) => {
-    const mn = (Array.isArray(m.material) ? m.material[0]?.name : m.material?.name || '').toLowerCase();
-    return mn.includes('carpet');
-  });
-  const tunnelHits = downRay.intersectObjects(carpetMeshes.length ? carpetMeshes : cabinMeshes, false);
-  const tunnelY = tunnelHits.length > 0 ? tunnelHits[0].point.y : 0.71;
+  // 2. Carve out ONLY triangles belonging to the factory gearshift (tight box around boot + knob)
+  const carveMinX = gearX - 0.068;
+  const carveMaxX = gearX + 0.068;
+  const carveMinZ = gearZ - 0.068;
+  const carveMaxZ = gearZ + 0.068;
+  const carveMinY = tunnelY - 0.002;
+  const carveMaxY = topY + 0.008;
 
-  // 3. Carve out static factory gearshift triangles (knob, shaft, and square base boot)
-  const carveRadiusSq = 0.105 * 0.105;
-  const carveMinY = tunnelY + 0.004;
-
-  for (const mesh of cabinMeshes) {
+  for (const mesh of bodyCabinMeshes) {
     const mName = (Array.isArray(mesh.material) ? mesh.material[0]?.name : mesh.material?.name || '').toLowerCase();
-    if (mName.includes('carpet')) continue;
+    if (!mName.includes('cabin1') && !mName.includes('cabin_leather_a1') && !mName.includes('cabin_a1')) {
+      continue;
+    }
     const geo = mesh.geometry;
     const posAttr = geo.attributes.position;
     if (!posAttr) continue;
@@ -232,10 +231,14 @@ function findAndCarveOriginalGearshift(
       vb.fromBufferAttribute(posAttr, ib).applyMatrix4(mesh.matrixWorld);
       vc.fromBufferAttribute(posAttr, ic).applyMatrix4(mesh.matrixWorld);
       centroid.copy(va).add(vb).add(vc).multiplyScalar(1 / 3);
-      if (centroid.y < carveMinY || centroid.y > 1.12) return false;
-      const dx = centroid.x - gearX;
-      const dz = centroid.z - gearZ;
-      return dx * dx + dz * dz < carveRadiusSq;
+      return (
+        centroid.x >= carveMinX &&
+        centroid.x <= carveMaxX &&
+        centroid.z >= carveMinZ &&
+        centroid.z <= carveMaxZ &&
+        centroid.y >= carveMinY &&
+        centroid.y <= carveMaxY
+      );
     };
 
     if (geo.index) {
@@ -264,9 +267,9 @@ function findAndCarveOriginalGearshift(
     }
   }
 
-  const origHeight = count > 0 ? Math.max(0.18, maxY - tunnelY) : 0.27;
-  // Nominal Q-Branch gearstick height from tunnelY to cap top is ~0.27m
-  const scale = THREE.MathUtils.clamp(origHeight / 0.27, 0.72, 1.15);
+  const origHeight = Math.max(0.18, topY - tunnelY);
+  // Nominal remodeled Q-Branch gearstick height from tunnelY to cap top is ~0.248m
+  const scale = THREE.MathUtils.clamp(origHeight / 0.248, 0.88, 1.10);
   return {
     basePos: new THREE.Vector3(gearX, tunnelY, gearZ),
     scale,
@@ -727,10 +730,11 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
           }
         }
 
-        // 2. Q-Branch Cabin Controls: replace static factory gearshift in-place & sit armrest flush on tunnel
+        // 2. Q-Branch Cabin Controls: filter strictly to SM_Body_101 (never door meshes)
         const cabinMeshes: THREE.Mesh[] = [];
         root.traverse((obj) => {
           if (!(obj instanceof THREE.Mesh)) return;
+          if (!obj.name.toLowerCase().includes('sm_body_101')) return;
           const mName = (Array.isArray(obj.material) ? obj.material[0]?.name : obj.material?.name || '').toLowerCase();
           if (
             mName.includes('cabin_carpet') ||
@@ -745,16 +749,20 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
 
         const { basePos: gearPos, scale: gearScale } = findAndCarveOriginalGearshift(cabinMeshes);
 
+        const carpetMeshes = cabinMeshes.filter((m) => {
+          const mn = (Array.isArray(m.material) ? m.material[0]?.name : m.material?.name || '').toLowerCase();
+          return mn.includes('carpet');
+        });
         const tunnelRay = new THREE.Raycaster();
         const downDir = new THREE.Vector3(0, -1, 0);
         const measureTunnelY = (x: number, z: number, fallbackY: number): number => {
-          tunnelRay.set(new THREE.Vector3(x, 1.35, z), downDir);
-          const hits = tunnelRay.intersectObjects(cabinMeshes, false);
+          tunnelRay.set(new THREE.Vector3(x, 0.75, z), downDir);
+          const hits = tunnelRay.intersectObjects(carpetMeshes.length ? carpetMeshes : cabinMeshes, false);
           return hits.length > 0 ? hits[0].point.y : fallbackY;
         };
 
         const armrestZ = -0.06;
-        const armrestPos = new THREE.Vector3(0, measureTunnelY(0, armrestZ, 0.73), armrestZ);
+        const armrestPos = new THREE.Vector3(0, measureTunnelY(0, armrestZ, 0.44), armrestZ);
         const cabinRig = createQBranchCabinRig(gearPos, armrestPos, gearScale);
         scene.add(cabinRig.root);
         cabinRig.root.updateMatrixWorld(true);

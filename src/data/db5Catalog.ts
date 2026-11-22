@@ -125,8 +125,8 @@ export const PRESETS: PresetConfig[] = [
     description: 'Driver-shoulder view of the gear-knob trigger & side-hinged armrest bay',
     explode: 0,
     visibleSubsystems: ['body', 'doors', 'hood_trunk', 'powertrain', 'wheels_brakes', 'bumpers_lights', 'cabin', 'qbranch_weapons', 'qbranch_cockpit'],
-    cameraPosition: [-0.30, 1.22, -0.36],
-    cameraTarget: [0.02, 0.86, 0.08],
+    cameraPosition: [-0.26, 0.92, -0.32],
+    cameraTarget: [0.0, 0.58, 0.12],
   },
   {
     id: 'wing_guns',

@@ -108,6 +108,11 @@ function createShiftPatternTexture(): THREE.CanvasTexture {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 512, 512);
 
+  ctx.save();
+  ctx.translate(256, 256);
+  ctx.rotate(Math.PI / 2);
+  ctx.translate(-256, -256);
+
   ctx.strokeStyle = '#f1f5f9';
   ctx.fillStyle = '#f1f5f9';
   ctx.lineWidth = 12;
@@ -137,6 +142,7 @@ function createShiftPatternTexture(): THREE.CanvasTexture {
   ctx.fillText('2', xs[0], yBot + 44);
   ctx.fillText('4', xs[1], yBot + 44);
   ctx.fillText('R', xs[2], yBot + 44);
+  ctx.restore();
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -302,16 +308,7 @@ export function createQBranchCabinRig(
     clearcoat: 0.9,
   });
 
-  // Clean procedural Tan/Saddle Connolly Leather matching the DB5 seats & original gaiter (no atlas decals)
-  const tanLeatherMat = new THREE.MeshStandardMaterial({
-    color: 0x94551b,
-    roughness: 0.62,
-    metalness: 0.04,
-    bumpMap: leatherBump,
-    bumpScale: 0.0018,
-  });
-
-  // Clean procedural Charcoal/Black Connolly Leather for the Q-Branch armrest box (Photos 1, 4, 5)
+  // Clean procedural Charcoal/Black Connolly Leather matching the factory shifter boot & armrest (Photos 1, 4, 5)
   const blackLeatherMat = new THREE.MeshStandardMaterial({
     color: 0x1a1c20,
     roughness: 0.58,
@@ -336,7 +333,7 @@ export function createQBranchCabinRig(
   };
 
   // =========================================================================
-  // 1. GEAR-KNOB ACTUATOR ASSEMBLY (Replaces original static DB5 gearshift)
+  // 1. GEAR-KNOB ACTUATOR ASSEMBLY (Matched to factory DB5 shifter dimensions: 0.248m tall)
   // =========================================================================
   const gearGroup = new THREE.Group();
   gearGroup.name = 'QBranch_GearKnobActuator';
@@ -344,98 +341,105 @@ export function createQBranchCabinRig(
   gearGroup.scale.setScalar(gearScale);
   root.add(gearGroup);
 
-  // Stitched tan Connolly leather tunnel surround sitting flush on carpet
-  const surroundShape = createRoundedRectShape(0.11, 0.13, 0.014);
+  // Black leather square tunnel surround sitting flush on carpet (matches factory boot base)
+  const surroundShape = createRoundedRectShape(0.108, 0.112, 0.010);
   const surroundGeo = new THREE.ExtrudeGeometry(surroundShape, {
-    depth: 0.010,
+    depth: 0.008,
     bevelEnabled: true,
-    bevelThickness: 0.003,
-    bevelSize: 0.003,
-    bevelSegments: 3,
+    bevelThickness: 0.0025,
+    bevelSize: 0.0025,
+    bevelSegments: 2,
   });
   surroundGeo.rotateX(Math.PI / 2);
   const bootSurround = register(
-    new THREE.Mesh(surroundGeo, tanLeatherMat),
+    new THREE.Mesh(surroundGeo, blackLeatherMat),
     'Gearstick Stitched Tunnel Surround',
-    'Tan Connolly Leather',
+    'Black Connolly Leather',
     'Flush-mounted stitched leather trim ring anchoring the shift boot to the center tunnel.',
     [0, 0.45, 0.12]
   );
-  bootSurround.position.set(0, 0.008, 0);
+  bootSurround.position.set(0, 0.006, 0);
   gearGroup.add(bootSurround);
 
-  // Sculpted pleated tan leather gaiter
+  // Tapered black leather gaiter matching the factory boot height (0.0 -> 0.114m)
   const gaiterPoints = [
-    new THREE.Vector2(0.042, 0.0),
-    new THREE.Vector2(0.039, 0.018),
-    new THREE.Vector2(0.031, 0.035),
-    new THREE.Vector2(0.034, 0.050),
-    new THREE.Vector2(0.022, 0.070),
-    new THREE.Vector2(0.025, 0.084),
-    new THREE.Vector2(0.013, 0.102),
-    new THREE.Vector2(0.010, 0.112),
+    new THREE.Vector2(0.040, 0.0),
+    new THREE.Vector2(0.036, 0.022),
+    new THREE.Vector2(0.026, 0.052),
+    new THREE.Vector2(0.017, 0.082),
+    new THREE.Vector2(0.011, 0.104),
+    new THREE.Vector2(0.0078, 0.114),
   ];
   const gaiter = register(
-    new THREE.Mesh(new THREE.LatheGeometry(gaiterPoints, 28), tanLeatherMat),
-    'Gearstick Pleated Leather Gaiter',
-    'Tan Connolly Leather',
-    'Tailored leather shifter boot concealing the actuator microswitch wiring.',
+    new THREE.Mesh(new THREE.LatheGeometry(gaiterPoints, 28), blackLeatherMat),
+    'Gearstick Leather Gaiter',
+    'Black Connolly Leather',
+    'Tailored black leather shifter boot concealing the actuator microswitch wiring.',
     [0, 0.58, 0.14]
   );
   gearGroup.add(gaiter);
 
-  // Angled chrome gearstick shaft
+  // Vertical slender chrome gearstick shaft (matches factory vertical alignment)
   const stickPivot = new THREE.Group();
-  stickPivot.position.set(0, 0.06, 0);
-  stickPivot.rotation.x = -0.14;
+  stickPivot.position.set(0, 0.110, 0);
   gearGroup.add(stickPivot);
 
   const shaft = register(
-    new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.0072, 0.165, 20), chromeMat),
+    new THREE.Mesh(new THREE.CylinderGeometry(0.0046, 0.0054, 0.084, 20), chromeMat),
     'Gearstick Chrome Shaft',
     'Polished Chrome Steel',
-    'Hollowed ZF 5-speed selector shaft routing the concealed trigger lead.',
+    'Slender ZF 5-speed selector shaft routing the concealed trigger lead.',
     [0, 0.72, 0.14]
   );
-  shaft.position.set(0, 0.0825, 0);
+  shaft.position.set(0, 0.042, 0);
   stickPivot.add(shaft);
 
-  // Inverted-cone DB5 gear knob (Blueprint #38)
+  // Elongated Tulip/Bell DB5 Gear Knob (matches factory ~0.056m elongated silhouette + Blueprint #38)
   const knobGroup = new THREE.Group();
-  knobGroup.position.set(0, 0.180, 0);
+  knobGroup.position.set(0, 0.082, 0);
   stickPivot.add(knobGroup);
 
   const knurlCollar = register(
-    new THREE.Mesh(new THREE.CylinderGeometry(0.0132, 0.0108, 0.010, 28), machinedAluMat),
+    new THREE.Mesh(new THREE.CylinderGeometry(0.0086, 0.0068, 0.007, 24), machinedAluMat),
     'Gear Knob Knurled Collar',
     'Knurled Chrome-Plated Brass',
     'Precision knurled locking collar at the base of the DB5 shift knob.',
     [0, 0.8, 0.15],
     { type: 'toggleGearCap' }
   );
-  knurlCollar.position.set(0, -0.025, 0);
+  knurlCollar.position.set(0, 0.0035, 0);
   knobGroup.add(knurlCollar);
 
+  // Elongated curved tulip profile (y = 0.006 to 0.048, flaring smoothly to 0.0162m shoulder)
+  const knobBodyPoints = [
+    new THREE.Vector2(0.0084, 0.006),
+    new THREE.Vector2(0.0094, 0.013),
+    new THREE.Vector2(0.0114, 0.022),
+    new THREE.Vector2(0.0140, 0.032),
+    new THREE.Vector2(0.0158, 0.041),
+    new THREE.Vector2(0.0162, 0.046),
+    new THREE.Vector2(0.0154, 0.0485),
+    new THREE.Vector2(0.0135, 0.0485),
+  ];
   const knobBody = register(
-    new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.013, 0.046, 32), glossBakeliteMat),
-    'Gear Knob Inverted-Cone Body',
+    new THREE.Mesh(new THREE.LatheGeometry(knobBodyPoints, 32), glossBakeliteMat),
+    'Gear Knob Elongated Body',
     'High-Gloss Black Bakelite',
-    'Authentic Goldfinger Blueprint #38 tapered knob housing the recessed red actuator.',
+    'Elongated factory-profile DB5 shift knob housing the concealed Q-Branch actuator.',
     [0, 0.86, 0.18],
     { type: 'toggleGearCap' }
   );
-  knobBody.position.set(0, 0.002, 0);
   knobGroup.add(knobBody);
 
   const wellPoints = [
-    new THREE.Vector2(0.004, 0.015),
-    new THREE.Vector2(0.0135, 0.015),
-    new THREE.Vector2(0.017, 0.021),
-    new THREE.Vector2(0.0195, 0.025),
-    new THREE.Vector2(0.0218, 0.025),
+    new THREE.Vector2(0.002, 0.038),
+    new THREE.Vector2(0.0095, 0.038),
+    new THREE.Vector2(0.0122, 0.044),
+    new THREE.Vector2(0.0138, 0.0482),
+    new THREE.Vector2(0.0152, 0.0482),
   ];
   const machinedWell = register(
-    new THREE.Mesh(new THREE.LatheGeometry(wellPoints, 32), machinedAluMat),
+    new THREE.Mesh(new THREE.LatheGeometry(wellPoints, 28), machinedAluMat),
     'Machined Aluminum Actuator Well',
     'Turned Aircraft Aluminum',
     'Circular dished aluminum recess and hinge seat inside the top of the gear knob.',
@@ -445,51 +449,52 @@ export function createQBranchCabinRig(
   knobGroup.add(machinedWell);
 
   const gearRedButton = register(
-    new THREE.Mesh(new THREE.CylinderGeometry(0.0105, 0.011, 0.014, 28), redButtonMat),
+    new THREE.Mesh(new THREE.CylinderGeometry(0.0076, 0.0080, 0.011, 24), redButtonMat),
     'Red Gear-Knob Actuator Button',
     'Polished Red Acrylic / Microswitch',
     'Spring-loaded Q-Branch tactical trigger: press to deploy & fire the twin Browning .30-caliber machine guns.',
     [0, 1.08, 0.2],
     { type: 'pressGearButton' }
   );
-  gearRedButton.position.set(0, 0.023, 0);
+  gearRedButton.position.set(0, 0.0445, 0);
   knobGroup.add(gearRedButton);
 
-  // Hinged Flip-Top Safety Cap
+  // Hinged Domed Flip-Top Safety Cap (completes the factory rounded dome at y = 0.0485..0.056)
   const gearCapPivot = new THREE.Group();
-  gearCapPivot.position.set(0, 0.0255, 0.021);
+  gearCapPivot.position.set(0, 0.0485, 0.015);
   knobGroup.add(gearCapPivot);
 
   const capUnderside = register(
-    new THREE.Mesh(new THREE.CylinderGeometry(0.0212, 0.0212, 0.0028, 32), machinedAluMat),
+    new THREE.Mesh(new THREE.CylinderGeometry(0.0148, 0.0148, 0.0022, 28), machinedAluMat),
     'Flip-Top Lid Machined Underside',
     'Turned Aircraft Aluminum',
     'Precision-milled aluminum inner face and hinge lug of the flip-top safety cap.',
     [0, 1.12, 0.24],
     { type: 'toggleGearCap' }
   );
-  capUnderside.position.set(0, 0.0014, -0.021);
+  capUnderside.position.set(0, 0.0011, -0.015);
   gearCapPivot.add(capUnderside);
 
-  const hingeLug = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.004, 0.007), machinedAluMat);
-  hingeLug.position.set(0, 0.0, -0.002);
+  const hingeLug = new THREE.Mesh(new THREE.BoxGeometry(0.0055, 0.003, 0.005), machinedAluMat);
+  hingeLug.position.set(0, 0.0, -0.0015);
   gearCapPivot.add(hingeLug);
 
   const shiftTex = createShiftPatternTexture();
   const shiftCapMat = new THREE.MeshStandardMaterial({
     map: shiftTex,
-    roughness: 0.16,
+    roughness: 0.15,
     metalness: 0.08,
   });
+  // Tapered rounded cap dome matching factory upper shoulder (r=0.0152 -> 0.0108)
   const capTop = register(
-    new THREE.Mesh(new THREE.CylinderGeometry(0.020, 0.0216, 0.0045, 32), shiftCapMat),
+    new THREE.Mesh(new THREE.CylinderGeometry(0.0110, 0.0152, 0.0058, 28), shiftCapMat),
     'Gear-Knob 5-Speed Flip-Top Cap',
     'Engraved Black Bakelite',
     'Hinged 5-speed + R shift-pattern safety lid. Click to flip open and expose the red actuator.',
     [0, 1.15, 0.25],
     { type: 'toggleGearCap' }
   );
-  capTop.position.set(0, 0.005, -0.021);
+  capTop.position.set(0, 0.0048, -0.015);
   gearCapPivot.add(capTop);
 
   // =========================================================================
@@ -838,10 +843,11 @@ export function updateQBranchCabinRig(
   state: QBranchGadgetStates,
   lerpFactor = 0.18
 ): void {
-  const targetCapRot = state.gearCapOpen ? -Math.PI * 0.66 : 0;
+  // Positive rotation.x around the +Z hinge swings the -Z cap cleanly UPWARD and OPEN
+  const targetCapRot = state.gearCapOpen ? Math.PI * 0.68 : 0;
   rig.gearCapPivot.rotation.x += (targetCapRot - rig.gearCapPivot.rotation.x) * lerpFactor;
 
-  const targetBtnY = state.gearButtonPressed ? 0.018 : 0.023;
+  const targetBtnY = state.gearButtonPressed ? 0.041 : 0.0445;
   rig.gearRedButton.position.y += (targetBtnY - rig.gearRedButton.position.y) * 0.35;
   const btnMat = rig.gearRedButton.material as THREE.MeshPhysicalMaterial;
   btnMat.emissiveIntensity = state.gearButtonPressed ? 1.5 : state.gearCapOpen ? 0.7 : 0.3;
