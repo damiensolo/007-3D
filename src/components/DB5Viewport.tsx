@@ -4,6 +4,13 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { classifyMesh, SubsystemId } from '../data/db5Catalog';
 import { createBrowningGunRig, GunRig, updateBrowningGunRig } from './BrowningGunAssembly';
+import {
+  CabinSubPart,
+  createQBranchCabinRig,
+  QBranchCabinRig,
+  QBranchGadgetStates,
+  updateQBranchCabinRig,
+} from './QBranchCabinAssembly';
 
 export interface DB5Part {
   id: string;
@@ -29,6 +36,7 @@ interface DB5ViewportProps {
   explode: number;
   gunDeploy: number;
   isFiringGuns: boolean;
+  qBranchState: QBranchGadgetStates;
   visibleSubsystems: Set<SubsystemId>;
   selectedPartId: string | null;
   hoveredPartId: string | null;
@@ -38,6 +46,7 @@ interface DB5ViewportProps {
   onPartsLoaded: (parts: DB5Part[], loadError?: string) => void;
   onSelectPart: (partId: string | null) => void;
   onHoverPart: (partId: string | null, screenPos?: { x: number; y: number }) => void;
+  onCabinAction: (action: NonNullable<CabinSubPart['action']>) => void;
 }
 
 /**
@@ -152,10 +161,123 @@ function carveGunPortHoles(
   }
 }
 
+/**
+ * Locates the static factory gearshift (shaft, knob, and leather boot) in the
+ * loaded DB5 cabin meshes and removes its triangles so the interactive Q-Branch
+ * Gear-Knob Actuator replaces it seamlessly in-place with zero duplication.
+ */
+function findAndCarveOriginalGearshift(
+  cabinMeshes: THREE.Mesh[]
+): { basePos: THREE.Vector3; scale: number } {
+  const va = new THREE.Vector3();
+  const vb = new THREE.Vector3();
+  const vc = new THREE.Vector3();
+  const centroid = new THREE.Vector3();
+
+  // 1. Find the factory gearshift in the center tunnel zone (between seats and dashboard)
+  //    Dashboard is at z > 0.40, seats are at |x| > 0.13, so [-0.10, 0.10] x [0.05, 0.32] isolates the shifter.
+  let sumX = 0;
+  let sumZ = 0;
+  let maxY = -Infinity;
+  let count = 0;
+
+  for (const mesh of cabinMeshes) {
+    const mName = (Array.isArray(mesh.material) ? mesh.material[0]?.name : mesh.material?.name || '').toLowerCase();
+    if (mName.includes('carpet')) continue;
+    const posAttr = mesh.geometry.attributes.position;
+    if (!posAttr) continue;
+    mesh.updateMatrixWorld(true);
+    for (let i = 0; i < posAttr.count; i++) {
+      va.fromBufferAttribute(posAttr, i).applyMatrix4(mesh.matrixWorld);
+      if (va.x > -0.10 && va.x < 0.10 && va.z > 0.05 && va.z < 0.32 && va.y > 0.76 && va.y < 1.12) {
+        if (va.y > 0.86) {
+          sumX += va.x;
+          sumZ += va.z;
+          count++;
+        }
+        maxY = Math.max(maxY, va.y);
+      }
+    }
+  }
+
+  const gearX = count > 0 ? sumX / count : 0.0;
+  const gearZ = count > 0 ? sumZ / count : 0.20;
+
+  // 2. Measure exact tunnel carpet Y beneath the gearshift
+  const downRay = new THREE.Raycaster(
+    new THREE.Vector3(gearX, 1.35, gearZ),
+    new THREE.Vector3(0, -1, 0)
+  );
+  const carpetMeshes = cabinMeshes.filter((m) => {
+    const mn = (Array.isArray(m.material) ? m.material[0]?.name : m.material?.name || '').toLowerCase();
+    return mn.includes('carpet');
+  });
+  const tunnelHits = downRay.intersectObjects(carpetMeshes.length ? carpetMeshes : cabinMeshes, false);
+  const tunnelY = tunnelHits.length > 0 ? tunnelHits[0].point.y : 0.71;
+
+  // 3. Carve out static factory gearshift triangles (knob, shaft, and square base boot)
+  const carveRadiusSq = 0.105 * 0.105;
+  const carveMinY = tunnelY + 0.004;
+
+  for (const mesh of cabinMeshes) {
+    const mName = (Array.isArray(mesh.material) ? mesh.material[0]?.name : mesh.material?.name || '').toLowerCase();
+    if (mName.includes('carpet')) continue;
+    const geo = mesh.geometry;
+    const posAttr = geo.attributes.position;
+    if (!posAttr) continue;
+    mesh.updateMatrixWorld(true);
+
+    const shouldRemoveTri = (ia: number, ib: number, ic: number): boolean => {
+      va.fromBufferAttribute(posAttr, ia).applyMatrix4(mesh.matrixWorld);
+      vb.fromBufferAttribute(posAttr, ib).applyMatrix4(mesh.matrixWorld);
+      vc.fromBufferAttribute(posAttr, ic).applyMatrix4(mesh.matrixWorld);
+      centroid.copy(va).add(vb).add(vc).multiplyScalar(1 / 3);
+      if (centroid.y < carveMinY || centroid.y > 1.12) return false;
+      const dx = centroid.x - gearX;
+      const dz = centroid.z - gearZ;
+      return dx * dx + dz * dz < carveRadiusSq;
+    };
+
+    if (geo.index) {
+      const oldIdx = geo.index.array;
+      const kept: number[] = [];
+      for (let i = 0; i < oldIdx.length; i += 3) {
+        if (!shouldRemoveTri(oldIdx[i], oldIdx[i + 1], oldIdx[i + 2])) {
+          kept.push(oldIdx[i], oldIdx[i + 1], oldIdx[i + 2]);
+        }
+      }
+      if (kept.length !== oldIdx.length) {
+        geo.setIndex(kept);
+        geo.computeBoundingSphere();
+      }
+    } else {
+      const keptIndices: number[] = [];
+      for (let i = 0; i < posAttr.count; i += 3) {
+        if (!shouldRemoveTri(i, i + 1, i + 2)) {
+          keptIndices.push(i, i + 1, i + 2);
+        }
+      }
+      if (keptIndices.length !== posAttr.count) {
+        geo.setIndex(keptIndices);
+        geo.computeBoundingSphere();
+      }
+    }
+  }
+
+  const origHeight = count > 0 ? Math.max(0.18, maxY - tunnelY) : 0.27;
+  // Nominal Q-Branch gearstick height from tunnelY to cap top is ~0.27m
+  const scale = THREE.MathUtils.clamp(origHeight / 0.27, 0.72, 1.15);
+  return {
+    basePos: new THREE.Vector3(gearX, tunnelY, gearZ),
+    scale,
+  };
+}
+
 export const DB5Viewport: React.FC<DB5ViewportProps> = ({
   explode,
   gunDeploy,
   isFiringGuns,
+  qBranchState,
   visibleSubsystems,
   selectedPartId,
   hoveredPartId,
@@ -165,6 +287,7 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
   onPartsLoaded,
   onSelectPart,
   onHoverPart,
+  onCabinAction,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -172,6 +295,8 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
   const explodeRef = useRef(explode);
   const gunDeployRef = useRef(gunDeploy);
   const isFiringGunsRef = useRef(isFiringGuns);
+  const qBranchStateRef = useRef(qBranchState);
+  const onCabinActionRef = useRef(onCabinAction);
   const visibleSubsystemsRef = useRef(visibleSubsystems);
   const selectedPartIdRef = useRef(selectedPartId);
   const hoveredPartIdRef = useRef(hoveredPartId);
@@ -181,6 +306,8 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
   explodeRef.current = explode;
   gunDeployRef.current = gunDeploy;
   isFiringGunsRef.current = isFiringGuns;
+  qBranchStateRef.current = qBranchState;
+  onCabinActionRef.current = onCabinAction;
   visibleSubsystemsRef.current = visibleSubsystems;
   selectedPartIdRef.current = selectedPartId;
   hoveredPartIdRef.current = hoveredPartId;
@@ -189,6 +316,7 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
 
   const partsRef = useRef<InternalPart[]>([]);
   const gunRigsRef = useRef<GunRig[]>([]);
+  const cabinRigRef = useRef<QBranchCabinRig | null>(null);
   const cameraGoalRef = useRef<{ pos: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
@@ -335,7 +463,7 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
     controls.enableDamping = true;
     controls.dampingFactor = 0.06;
     controls.target.set(0, 0.65, 0);
-    controls.minDistance = 1.2;
+    controls.minDistance = 0.25;
     controls.maxDistance = 14;
     controls.maxPolarAngle = Math.PI / 2 + 0.15;
     controls.update();
@@ -599,6 +727,89 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
           }
         }
 
+        // 2. Q-Branch Cabin Controls: replace static factory gearshift in-place & sit armrest flush on tunnel
+        const cabinMeshes: THREE.Mesh[] = [];
+        root.traverse((obj) => {
+          if (!(obj instanceof THREE.Mesh)) return;
+          const mName = (Array.isArray(obj.material) ? obj.material[0]?.name : obj.material?.name || '').toLowerCase();
+          if (
+            mName.includes('cabin_carpet') ||
+            mName.includes('cabin_a1') ||
+            mName.includes('cabin1') ||
+            mName.includes('cabin_leather_a1') ||
+            mName.includes('plastics')
+          ) {
+            cabinMeshes.push(obj);
+          }
+        });
+
+        const { basePos: gearPos, scale: gearScale } = findAndCarveOriginalGearshift(cabinMeshes);
+
+        const tunnelRay = new THREE.Raycaster();
+        const downDir = new THREE.Vector3(0, -1, 0);
+        const measureTunnelY = (x: number, z: number, fallbackY: number): number => {
+          tunnelRay.set(new THREE.Vector3(x, 1.35, z), downDir);
+          const hits = tunnelRay.intersectObjects(cabinMeshes, false);
+          return hits.length > 0 ? hits[0].point.y : fallbackY;
+        };
+
+        const armrestZ = -0.06;
+        const armrestPos = new THREE.Vector3(0, measureTunnelY(0, armrestZ, 0.73), armrestZ);
+        const cabinRig = createQBranchCabinRig(gearPos, armrestPos, gearScale);
+        scene.add(cabinRig.root);
+        cabinRig.root.updateMatrixWorld(true);
+        cabinRigRef.current = cabinRig;
+
+        for (const sub of cabinRig.subParts) {
+          const rawMats = Array.isArray(sub.mesh.material) ? sub.mesh.material : [sub.mesh.material];
+          const clonedMats = rawMats.map((m) => m.clone());
+          sub.mesh.material = Array.isArray(sub.mesh.material) ? clonedMats : clonedMats[0];
+
+          const meshBox = new THREE.Box3().setFromObject(sub.mesh);
+          const meshCenter = new THREE.Vector3();
+          meshBox.getCenter(meshCenter);
+
+          const worldExplodeVec = new THREE.Vector3(...sub.semanticDir).multiplyScalar(0.85);
+          const parentWorldQuat = new THREE.Quaternion();
+          const parentWorldScale = new THREE.Vector3();
+          const parentWorldPos = new THREE.Vector3();
+          if (sub.mesh.parent) {
+            sub.mesh.parent.matrixWorld.decompose(parentWorldPos, parentWorldQuat, parentWorldScale);
+          }
+          const localExplodeVec = worldExplodeVec
+            .clone()
+            .applyQuaternion(parentWorldQuat.clone().invert())
+            .divide(parentWorldScale);
+
+          const geo = sub.mesh.geometry;
+          const triCount = geo.index
+            ? Math.round(geo.index.count / 3)
+            : Math.round((geo.attributes.position?.count || 0) / 3);
+
+          const id = `part-${idx++}`;
+          sub.mesh.userData.partId = id;
+          if (sub.action) {
+            sub.mesh.userData.cabinAction = sub.action;
+          }
+
+          internalParts.push({
+            id,
+            meshName: `${cabinRig.root.name}:${sub.label}`,
+            materialName: sub.materialLabel,
+            label: sub.label,
+            subsystem: 'qbranch_cockpit',
+            materialLabel: sub.materialLabel,
+            isQBranch: true,
+            qBranchNote: sub.qBranchNote,
+            triangleCount: triCount,
+            worldCenter: meshCenter,
+            mesh: sub.mesh,
+            basePosition: sub.mesh.position.clone(),
+            explodeOffset: localExplodeVec,
+            originalMaterials: clonedMats,
+          });
+        }
+
         partsRef.current = internalParts;
         onPartsLoaded(
           internalParts.map(({ mesh: _m, basePosition: _b, explodeOffset: _e, originalMaterials: _o, ...rest }) => rest)
@@ -617,7 +828,7 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
     const pointer = new THREE.Vector2();
     let pointerDownPos = { x: 0, y: 0 };
 
-    const getHitPartId = (clientX: number, clientY: number): string | null => {
+    const getHitObject = (clientX: number, clientY: number): THREE.Object3D | null => {
       const rect = renderer.domElement.getBoundingClientRect();
       pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
@@ -628,10 +839,7 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
         .map((p) => p.mesh);
 
       const hits = raycaster.intersectObjects(visibleMeshes, false);
-      if (hits.length > 0) {
-        return (hits[0].object.userData.partId as string) || null;
-      }
-      return null;
+      return hits.length > 0 ? hits[0].object : null;
     };
 
     const handlePointerDown = (e: PointerEvent) => {
@@ -639,7 +847,8 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
     };
 
     const handlePointerMove = (e: PointerEvent) => {
-      const hitId = getHitPartId(e.clientX, e.clientY);
+      const hitObj = getHitObject(e.clientX, e.clientY);
+      const hitId = (hitObj?.userData.partId as string) || null;
       renderer.domElement.style.cursor = hitId ? 'pointer' : 'grab';
       onHoverPart(hitId, hitId ? { x: e.clientX, y: e.clientY } : undefined);
     };
@@ -649,7 +858,12 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
       const dy = e.clientY - pointerDownPos.y;
       if (Math.hypot(dx, dy) > 5) return; // Was an orbit drag, not a click
 
-      const hitId = getHitPartId(e.clientX, e.clientY);
+      const hitObj = getHitObject(e.clientX, e.clientY);
+      const hitId = (hitObj?.userData.partId as string) || null;
+      const cabinAction = hitObj?.userData.cabinAction as CabinSubPart['action'] | undefined;
+      if (cabinAction) {
+        onCabinActionRef.current(cabinAction);
+      }
       onSelectPart(hitId);
     };
 
@@ -693,13 +907,21 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
         );
       }
 
+      if (cabinRigRef.current) {
+        updateQBranchCabinRig(cabinRigRef.current, qBranchStateRef.current);
+      }
+
       // Smoothly lerp explode factor
       const targetExplode = explodeRef.current;
       currentExplode += (targetExplode - currentExplode) * 0.12;
 
       for (const part of partsRef.current) {
-        // When exploded > 0.05, offset from basePosition; when assembled, gunCarriage & indicatorFlap animate via rig
-        if (part.subsystem === 'qbranch_weapons' && targetExplode < 0.01 && currentExplode < 0.01) {
+        // When assembled, animated Q-Branch rigs control their own sub-part transforms
+        if (
+          (part.subsystem === 'qbranch_weapons' || part.subsystem === 'qbranch_cockpit') &&
+          targetExplode < 0.01 &&
+          currentExplode < 0.01
+        ) {
           continue;
         }
         part.mesh.position

@@ -22,6 +22,11 @@ import {
 } from 'lucide-react';
 import { DB5Part, DB5Viewport } from './components/DB5Viewport';
 import {
+  CabinSubPart,
+  QBranchGadgetKey,
+  QBranchGadgetStates,
+} from './components/QBranchCabinAssembly';
+import {
   PRESETS,
   PresetConfig,
   SUBSYSTEM_MAP,
@@ -37,6 +42,20 @@ export function App() {
   const [explode, setExplode] = useState(0);
   const [gunDeploy, setGunDeploy] = useState(0);
   const [isFiringGuns, setIsFiringGuns] = useState(false);
+  const [qBranchState, setQBranchState] = useState<QBranchGadgetStates>({
+    armrestOpen: false,
+    gearCapOpen: false,
+    gearButtonPressed: false,
+    plateIndex: 0,
+    oilSlick: false,
+    smokeScreen: false,
+    frontRam: false,
+    rearRam: false,
+    wingGuns: false,
+    roofHatch: false,
+    bulletShield: false,
+  });
+  const buttonTimerRef = useRef<number | null>(null);
   const [visibleSubsystems, setVisibleSubsystems] = useState<Set<SubsystemId>>(
     () => new Set(SUBSYSTEMS.map((s) => s.id))
   );
@@ -141,6 +160,59 @@ export function App() {
     }
   }, []);
 
+  const triggerGearRedButton = useCallback(() => {
+    setQBranchState((prev) => {
+      if (!prev.gearCapOpen) {
+        return { ...prev, gearCapOpen: true };
+      }
+      if (buttonTimerRef.current !== null) {
+        window.clearTimeout(buttonTimerRef.current);
+      }
+      buttonTimerRef.current = window.setTimeout(() => {
+        setQBranchState((curr) => ({ ...curr, gearButtonPressed: false }));
+      }, 220);
+
+      setGunDeploy(1);
+      setIsFiringGuns((firing) => !firing);
+      return { ...prev, gearButtonPressed: true, wingGuns: true };
+    });
+  }, []);
+
+  const toggleGadget = useCallback((key: QBranchGadgetKey) => {
+    setQBranchState((prev) => {
+      const nextVal = !prev[key];
+      if (key === 'wingGuns') {
+        setGunDeploy(nextVal ? 1 : 0);
+        if (!nextVal) setIsFiringGuns(false);
+      }
+      return { ...prev, [key]: nextVal };
+    });
+  }, []);
+
+  const cyclePlates = useCallback(() => {
+    setQBranchState((prev) => ({
+      ...prev,
+      plateIndex: ((prev.plateIndex + 1) % 3) as 0 | 1 | 2,
+    }));
+  }, []);
+
+  const handleCabinAction = useCallback(
+    (action: NonNullable<CabinSubPart['action']>) => {
+      if (action.type === 'toggleGearCap') {
+        setQBranchState((prev) => ({ ...prev, gearCapOpen: !prev.gearCapOpen }));
+      } else if (action.type === 'pressGearButton') {
+        triggerGearRedButton();
+      } else if (action.type === 'toggleArmrest') {
+        setQBranchState((prev) => ({ ...prev, armrestOpen: !prev.armrestOpen }));
+      } else if (action.type === 'cyclePlates') {
+        cyclePlates();
+      } else if (action.type === 'toggleGadget') {
+        toggleGadget(action.key);
+      }
+    },
+    [triggerGearRedButton, toggleGadget, cyclePlates]
+  );
+
   const toggleSubsystem = (id: SubsystemId) => {
     setActivePresetId('');
     setVisibleSubsystems((prev) => {
@@ -166,14 +238,23 @@ export function App() {
     setIsolatedPartId(null);
     if (preset.id === 'wing_guns' || preset.id === 'qbranch') {
       setGunDeploy(1);
+      setQBranchState((prev) => ({ ...prev, wingGuns: true }));
+    } else if (preset.id === 'cockpit') {
+      setQBranchState((prev) => ({ ...prev, armrestOpen: true, gearCapOpen: true }));
     } else if (preset.id === 'assembled') {
       setGunDeploy(0);
       setIsFiringGuns(false);
+      setQBranchState((prev) => ({
+        ...prev,
+        armrestOpen: false,
+        gearCapOpen: false,
+        wingGuns: false,
+      }));
     }
     if (preset.cameraPosition) {
       setCameraTargetRequest({
         position: preset.cameraPosition,
-        target: [0, 0.65, 0],
+        target: preset.cameraTarget ?? [0, 0.65, 0],
         nonce: Date.now(),
       });
     }
@@ -206,6 +287,7 @@ export function App() {
       bumpers_lights: 0,
       cabin: 0,
       qbranch_weapons: 0,
+      qbranch_cockpit: 0,
     };
     for (const p of parts) {
       counts[p.subsystem]++;
@@ -306,6 +388,7 @@ export function App() {
         explode={explode}
         gunDeploy={gunDeploy}
         isFiringGuns={isFiringGuns}
+        qBranchState={qBranchState}
         visibleSubsystems={visibleSubsystems}
         selectedPartId={selectedPartId}
         hoveredPartId={hoveredPartId}
@@ -315,6 +398,7 @@ export function App() {
         onPartsLoaded={handlePartsLoaded}
         onSelectPart={handleSelectPart}
         onHoverPart={handleHoverPart}
+        onCabinAction={handleCabinAction}
       />
 
       {/* Loading Overlay */}
@@ -721,6 +805,7 @@ export function App() {
                 if (gunDeploy < 0.85) {
                   setGunDeploy(1);
                   setIsFiringGuns(true);
+                  setQBranchState((prev) => ({ ...prev, wingGuns: true }));
                 } else {
                   setIsFiringGuns((prev) => !prev);
                 }
@@ -735,6 +820,82 @@ export function App() {
               <Flame className="w-3.5 h-3.5" />
               <span>{isFiringGuns ? 'Firing' : 'Fire'}</span>
             </button>
+          </div>
+
+          {/* Q-Branch Cockpit & Armrest Controls Row */}
+          <div className="flex items-center flex-wrap gap-1.5 pt-1.5 border-t border-zinc-800/70">
+            <button
+              onClick={() => setQBranchState((prev) => ({ ...prev, gearCapOpen: !prev.gearCapOpen }))}
+              className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition cursor-pointer ${
+                qBranchState.gearCapOpen
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
+                  : 'bg-zinc-900 text-zinc-300 border-zinc-700/60 hover:bg-zinc-800'
+              }`}
+              title="Flip open/close the gear-knob safety cap"
+            >
+              {qBranchState.gearCapOpen ? 'Cap Open' : 'Flip Cap'}
+            </button>
+
+            <button
+              onClick={triggerGearRedButton}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition cursor-pointer ${
+                isFiringGuns
+                  ? 'bg-red-600 text-white border-red-400 shadow-sm shadow-red-500/40'
+                  : 'bg-red-950/60 text-red-300 border-red-500/40 hover:bg-red-900/60'
+              }`}
+              title="Press red gear-knob actuator button to deploy & fire machine guns"
+            >
+              {qBranchState.gearCapOpen ? 'Red Trigger' : 'Arm Trigger'}
+            </button>
+
+            <button
+              onClick={() => setQBranchState((prev) => ({ ...prev, armrestOpen: !prev.armrestOpen }))}
+              className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition cursor-pointer ${
+                qBranchState.armrestOpen
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
+                  : 'bg-zinc-900 text-zinc-300 border-zinc-700/60 hover:bg-zinc-800'
+              }`}
+              title="Lift center armrest lid to reveal Q-Branch switchgear"
+            >
+              {qBranchState.armrestOpen ? 'Armrest Open' : 'Armrest'}
+            </button>
+
+            <div className="w-px h-4 bg-zinc-800 mx-0.5" />
+
+            <button
+              onClick={cyclePlates}
+              className="px-2 py-0.5 rounded-md text-[10px] font-medium border bg-sky-500/15 text-sky-300 border-sky-500/40 hover:bg-sky-500/25 transition cursor-pointer"
+              title="Cycle 3-way revolving number plates (1: BMT 216A, 2: 4711-EA-62, 3: LU 6789)"
+            >
+              Plate {qBranchState.plateIndex + 1}
+            </button>
+
+            {(
+              [
+                ['wingGuns', 'Guns'],
+                ['roofHatch', 'Hatch'],
+                ['bulletShield', 'Shield'],
+                ['smokeScreen', 'Smoke'],
+                ['oilSlick', 'Oil'],
+                ['frontRam', 'F-Ram'],
+                ['rearRam', 'R-Ram'],
+              ] as Array<[QBranchGadgetKey, string]>
+            ).map(([key, label]) => {
+              const active = qBranchState[key];
+              return (
+                <button
+                  key={key}
+                  onClick={() => toggleGadget(key)}
+                  className={`px-2 py-0.5 rounded-md text-[10px] font-medium border transition cursor-pointer ${
+                    active
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+                      : 'bg-zinc-900/70 text-zinc-400 border-zinc-800 hover:text-zinc-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>

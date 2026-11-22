@@ -6,7 +6,8 @@ export type SubsystemId =
   | 'wheels_brakes'
   | 'bumpers_lights'
   | 'cabin'
-  | 'qbranch_weapons';
+  | 'qbranch_weapons'
+  | 'qbranch_cockpit';
 
 export interface SubsystemMeta {
   id: SubsystemId;
@@ -73,6 +74,13 @@ export const SUBSYSTEMS: SubsystemMeta[] = [
     color: '#f97316',
     description: 'Twin Browning M1919 .30-caliber machine guns concealed behind hinged Lucas front indicators.',
   },
+  {
+    id: 'qbranch_cockpit',
+    name: 'Q-Branch Cockpit & Armrest',
+    shortName: 'Q-Cockpit',
+    color: '#ef4444',
+    description: 'Flip-top gear-knob actuator button and concealed Goldfinger Continuation armrest switchgear.',
+  },
 ];
 
 export const SUBSYSTEM_MAP: Record<SubsystemId, SubsystemMeta> = SUBSYSTEMS.reduce(
@@ -91,6 +99,7 @@ export interface PresetConfig {
   visibleSubsystems: SubsystemId[];
   qBranchHighlight?: boolean;
   cameraPosition?: [number, number, number];
+  cameraTarget?: [number, number, number];
 }
 
 export const PRESETS: PresetConfig[] = [
@@ -99,7 +108,7 @@ export const PRESETS: PresetConfig[] = [
     label: 'Full Vehicle',
     description: 'Assembled 1964 Aston Martin DB5 Vantage',
     explode: 0,
-    visibleSubsystems: ['body', 'doors', 'hood_trunk', 'powertrain', 'wheels_brakes', 'bumpers_lights', 'cabin', 'qbranch_weapons'],
+    visibleSubsystems: ['body', 'doors', 'hood_trunk', 'powertrain', 'wheels_brakes', 'bumpers_lights', 'cabin', 'qbranch_weapons', 'qbranch_cockpit'],
     cameraPosition: [4.2, 2.0, 4.6],
   },
   {
@@ -107,15 +116,24 @@ export const PRESETS: PresetConfig[] = [
     label: 'Exploded View',
     description: 'Full 3D exploded component inventory',
     explode: 0.72,
-    visibleSubsystems: ['body', 'doors', 'hood_trunk', 'powertrain', 'wheels_brakes', 'bumpers_lights', 'cabin', 'qbranch_weapons'],
+    visibleSubsystems: ['body', 'doors', 'hood_trunk', 'powertrain', 'wheels_brakes', 'bumpers_lights', 'cabin', 'qbranch_weapons', 'qbranch_cockpit'],
     cameraPosition: [5.4, 2.9, 5.8],
+  },
+  {
+    id: 'cockpit',
+    label: '007 Cockpit',
+    description: 'Driver-shoulder view of the gear-knob trigger & side-hinged armrest bay',
+    explode: 0,
+    visibleSubsystems: ['body', 'doors', 'hood_trunk', 'powertrain', 'wheels_brakes', 'bumpers_lights', 'cabin', 'qbranch_weapons', 'qbranch_cockpit'],
+    cameraPosition: [-0.30, 1.22, -0.36],
+    cameraTarget: [0.02, 0.86, 0.08],
   },
   {
     id: 'wing_guns',
     label: 'Wing Guns',
     description: 'Zoom into the front-wing Browning .30-caliber machine guns',
     explode: 0,
-    visibleSubsystems: ['body', 'doors', 'hood_trunk', 'powertrain', 'wheels_brakes', 'bumpers_lights', 'cabin', 'qbranch_weapons'],
+    visibleSubsystems: ['body', 'doors', 'hood_trunk', 'powertrain', 'wheels_brakes', 'bumpers_lights', 'cabin', 'qbranch_weapons', 'qbranch_cockpit'],
     cameraPosition: [1.55, 0.85, 3.25],
   },
   {
@@ -147,7 +165,7 @@ export const PRESETS: PresetConfig[] = [
     label: '007 Q-Branch',
     description: 'Highlight Goldfinger / Skyfall Q-Branch modifications',
     explode: 0.42,
-    visibleSubsystems: ['body', 'doors', 'hood_trunk', 'powertrain', 'wheels_brakes', 'bumpers_lights', 'cabin', 'qbranch_weapons'],
+    visibleSubsystems: ['body', 'doors', 'hood_trunk', 'powertrain', 'wheels_brakes', 'bumpers_lights', 'cabin', 'qbranch_weapons', 'qbranch_cockpit'],
     qBranchHighlight: true,
     cameraPosition: [4.8, 2.4, 5.1],
   },
