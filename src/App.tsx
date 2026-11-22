@@ -254,6 +254,7 @@ export function App() {
       cabin: 0,
       qbranch_weapons: 0,
       qbranch_cockpit: 0,
+      qbranch_gadgets: 0,
     };
     for (const p of parts) {
       counts[p.subsystem]++;

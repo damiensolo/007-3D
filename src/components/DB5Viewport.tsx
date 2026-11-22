@@ -11,6 +11,11 @@ import {
   QBranchGadgetStates,
   updateQBranchCabinRig,
 } from './QBranchCabinAssembly';
+import {
+  createQBranchGadgetsRig,
+  QBranchGadgetsRig,
+  updateQBranchGadgetsRig,
+} from './QBranchGadgetsAssembly';
 
 export interface DB5Part {
   id: string;
@@ -320,6 +325,7 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
   const partsRef = useRef<InternalPart[]>([]);
   const gunRigsRef = useRef<GunRig[]>([]);
   const cabinRigRef = useRef<QBranchCabinRig | null>(null);
+  const gadgetsRigRef = useRef<QBranchGadgetsRig | null>(null);
   const cameraGoalRef = useRef<{ pos: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
@@ -768,55 +774,77 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
         cabinRig.root.updateMatrixWorld(true);
         cabinRigRef.current = cabinRig;
 
-        for (const sub of cabinRig.subParts) {
-          const rawMats = Array.isArray(sub.mesh.material) ? sub.mesh.material : [sub.mesh.material];
-          const clonedMats = rawMats.map((m) => m.clone());
-          sub.mesh.material = Array.isArray(sub.mesh.material) ? clonedMats : clonedMats[0];
+        const registerProceduralSubParts = (
+          rootName: string,
+          subsystem: SubsystemId,
+          subs: Array<{
+            mesh: THREE.Mesh;
+            label: string;
+            materialLabel: string;
+            qBranchNote: string;
+            semanticDir: [number, number, number];
+            action?: CabinSubPart['action'];
+          }>
+        ) => {
+          for (const sub of subs) {
+            const rawMats = Array.isArray(sub.mesh.material) ? sub.mesh.material : [sub.mesh.material];
+            const clonedMats = rawMats.map((m) => m.clone());
+            sub.mesh.material = Array.isArray(sub.mesh.material) ? clonedMats : clonedMats[0];
 
-          const meshBox = new THREE.Box3().setFromObject(sub.mesh);
-          const meshCenter = new THREE.Vector3();
-          meshBox.getCenter(meshCenter);
+            const meshBox = new THREE.Box3().setFromObject(sub.mesh);
+            const meshCenter = new THREE.Vector3();
+            meshBox.getCenter(meshCenter);
 
-          const worldExplodeVec = new THREE.Vector3(...sub.semanticDir).multiplyScalar(0.85);
-          const parentWorldQuat = new THREE.Quaternion();
-          const parentWorldScale = new THREE.Vector3();
-          const parentWorldPos = new THREE.Vector3();
-          if (sub.mesh.parent) {
-            sub.mesh.parent.matrixWorld.decompose(parentWorldPos, parentWorldQuat, parentWorldScale);
+            const worldExplodeVec = new THREE.Vector3(...sub.semanticDir).multiplyScalar(0.85);
+            const parentWorldQuat = new THREE.Quaternion();
+            const parentWorldScale = new THREE.Vector3();
+            const parentWorldPos = new THREE.Vector3();
+            if (sub.mesh.parent) {
+              sub.mesh.parent.matrixWorld.decompose(parentWorldPos, parentWorldQuat, parentWorldScale);
+            }
+            const localExplodeVec = worldExplodeVec
+              .clone()
+              .applyQuaternion(parentWorldQuat.clone().invert())
+              .divide(parentWorldScale);
+
+            const geo = sub.mesh.geometry;
+            const triCount = geo.index
+              ? Math.round(geo.index.count / 3)
+              : Math.round((geo.attributes.position?.count || 0) / 3);
+
+            const id = `part-${idx++}`;
+            sub.mesh.userData.partId = id;
+            if (sub.action) {
+              sub.mesh.userData.cabinAction = sub.action;
+            }
+
+            internalParts.push({
+              id,
+              meshName: `${rootName}:${sub.label}`,
+              materialName: sub.materialLabel,
+              label: sub.label,
+              subsystem,
+              materialLabel: sub.materialLabel,
+              isQBranch: true,
+              qBranchNote: sub.qBranchNote,
+              triangleCount: triCount,
+              worldCenter: meshCenter,
+              mesh: sub.mesh,
+              basePosition: sub.mesh.position.clone(),
+              explodeOffset: localExplodeVec,
+              originalMaterials: clonedMats,
+            });
           }
-          const localExplodeVec = worldExplodeVec
-            .clone()
-            .applyQuaternion(parentWorldQuat.clone().invert())
-            .divide(parentWorldScale);
+        };
 
-          const geo = sub.mesh.geometry;
-          const triCount = geo.index
-            ? Math.round(geo.index.count / 3)
-            : Math.round((geo.attributes.position?.count || 0) / 3);
+        registerProceduralSubParts(cabinRig.root.name, 'qbranch_cockpit', cabinRig.subParts);
 
-          const id = `part-${idx++}`;
-          sub.mesh.userData.partId = id;
-          if (sub.action) {
-            sub.mesh.userData.cabinAction = sub.action;
-          }
-
-          internalParts.push({
-            id,
-            meshName: `${cabinRig.root.name}:${sub.label}`,
-            materialName: sub.materialLabel,
-            label: sub.label,
-            subsystem: 'qbranch_cockpit',
-            materialLabel: sub.materialLabel,
-            isQBranch: true,
-            qBranchNote: sub.qBranchNote,
-            triangleCount: triCount,
-            worldCenter: meshCenter,
-            mesh: sub.mesh,
-            basePosition: sub.mesh.position.clone(),
-            explodeOffset: localExplodeVec,
-            originalMaterials: clonedMats,
-          });
-        }
+        // 3. Q-Branch Exterior Gadgets (Revolving Plates, Rams, Bullet Shield, Smoke, Oil, Roof Hatch)
+        const gadgetsRig = createQBranchGadgetsRig();
+        scene.add(gadgetsRig.root);
+        gadgetsRig.root.updateMatrixWorld(true);
+        gadgetsRigRef.current = gadgetsRig;
+        registerProceduralSubParts(gadgetsRig.root.name, 'qbranch_gadgets', gadgetsRig.subParts);
 
         partsRef.current = internalParts;
         onPartsLoaded(
@@ -901,7 +929,8 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
 
     const animate = () => {
       animId = requestAnimationFrame(animate);
-      const elapsed = clock.getElapsedTime();
+      const dt = clock.getDelta();
+      const elapsed = clock.elapsedTime;
 
       // Smoothly lerp gun deployment & firing recoil
       currentGunDeploy += (gunDeployRef.current - currentGunDeploy) * 0.14;
@@ -919,6 +948,10 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
         updateQBranchCabinRig(cabinRigRef.current, qBranchStateRef.current);
       }
 
+      if (gadgetsRigRef.current) {
+        updateQBranchGadgetsRig(gadgetsRigRef.current, qBranchStateRef.current, dt);
+      }
+
       // Smoothly lerp explode factor
       const targetExplode = explodeRef.current;
       currentExplode += (targetExplode - currentExplode) * 0.12;
@@ -926,7 +959,9 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
       for (const part of partsRef.current) {
         // When assembled, animated Q-Branch rigs control their own sub-part transforms
         if (
-          (part.subsystem === 'qbranch_weapons' || part.subsystem === 'qbranch_cockpit') &&
+          (part.subsystem === 'qbranch_weapons' ||
+            part.subsystem === 'qbranch_cockpit' ||
+            part.subsystem === 'qbranch_gadgets') &&
           targetExplode < 0.01 &&
           currentExplode < 0.01
         ) {
