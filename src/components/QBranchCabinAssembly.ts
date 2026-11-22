@@ -70,6 +70,40 @@ function createRoundedRectShape(width: number, height: number, radius: number): 
   return shape;
 }
 
+/**
+ * Builds a closed THREE.Path with smooth quadratic-bezier corner fillets at every vertex.
+ */
+function createFilletedPath(points: THREE.Vector2[], radii: number[]): THREE.Path {
+  const path = new THREE.Path();
+  const n = points.length;
+  for (let i = 0; i < n; i++) {
+    const prev = points[(i - 1 + n) % n];
+    const curr = points[i];
+    const next = points[(i + 1) % n];
+    const r = radii[i] ?? 0;
+
+    const vIn = new THREE.Vector2().subVectors(prev, curr);
+    const vOut = new THREE.Vector2().subVectors(next, curr);
+    const lenIn = vIn.length();
+    const lenOut = vOut.length();
+    const clampR = Math.min(r, lenIn * 0.45, lenOut * 0.45);
+
+    const pStart = curr.clone().addScaledVector(vIn.normalize(), clampR);
+    const pEnd = curr.clone().addScaledVector(vOut.normalize(), clampR);
+
+    if (i === 0) {
+      path.moveTo(pStart.x, pStart.y);
+    } else {
+      path.lineTo(pStart.x, pStart.y);
+    }
+    if (clampR > 1e-5) {
+      path.quadraticCurveTo(curr.x, curr.y, pEnd.x, pEnd.y);
+    }
+  }
+  path.closePath();
+  return path;
+}
+
 /** Generates a subtle tileable Connolly leather micro-grain bump map (no atlas decals). */
 function createLeatherBumpTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
@@ -606,7 +640,7 @@ export function createQBranchCabinRig(
   const togglePivots = {} as Record<'oilSlick' | 'smokeScreen' | 'frontRam' | 'rearRam', THREE.Group>;
   const rockerPivots = {} as Record<'wingGuns' | 'roofHatch' | 'bulletShield', THREE.Group>;
 
-  // A. Front 2x2 (+Z, closest to gearstick): 4 Black Paddle Toggle Switches
+  // A. Front 2x2 (+Z, closest to gearstick): 4 Sculpted Black Duckbill Paddle Toggles
   const toggleSpecs: Array<{
     key: 'oilSlick' | 'smokeScreen' | 'frontRam' | 'rearRam';
     label: string;
@@ -649,47 +683,97 @@ export function createQBranchCabinRig(
     },
   ];
 
+  // Shared high-detail geometries for the 4 toggle switches
+  const toggleCollarGeo = new THREE.LatheGeometry(
+    [
+      new THREE.Vector2(0.0108, 0.0),
+      new THREE.Vector2(0.0108, 0.0012),
+      new THREE.Vector2(0.0094, 0.0024),
+      new THREE.Vector2(0.0072, 0.0024),
+      new THREE.Vector2(0.0068, 0.0010),
+    ],
+    28
+  );
+  const toggleHexNutGeo = new THREE.CylinderGeometry(0.0064, 0.0064, 0.0028, 6);
+  const toggleBallGeo = new THREE.SphereGeometry(0.0034, 16, 12);
+
+  // Flared duckbill/teardrop paddle bat with smooth beveled edges
+  const paddleShape = new THREE.Shape();
+  paddleShape.moveTo(-0.0018, 0.0015);
+  paddleShape.lineTo(0.0018, 0.0015);
+  paddleShape.quadraticCurveTo(0.0034, 0.011, 0.0040, 0.0185);
+  paddleShape.absarc(0, 0.0195, 0.0040, 0, Math.PI, false);
+  paddleShape.quadraticCurveTo(-0.0034, 0.011, -0.0018, 0.0015);
+
+  const togglePaddleGeo = new THREE.ExtrudeGeometry(paddleShape, {
+    depth: 0.0026,
+    bevelEnabled: true,
+    bevelThickness: 0.0011,
+    bevelSize: 0.0009,
+    bevelSegments: 3,
+    curveSegments: 16,
+  });
+  togglePaddleGeo.translate(0, 0, -0.0013);
+
+  const satinPaddleMat = new THREE.MeshStandardMaterial({
+    color: 0x16181d,
+    metalness: 0.16,
+    roughness: 0.32,
+  });
+  const miniRingGeo = new THREE.CylinderGeometry(0.0024, 0.0028, 0.0014, 16);
+
   for (const spec of toggleSpecs) {
-    const nut = register(
-      new THREE.Mesh(new THREE.CylinderGeometry(0.0095, 0.0105, 0.005, 16), chromeMat),
-      `${spec.label} Nut`,
-      'Knurled Chrome Collar',
+    const collar = register(
+      new THREE.Mesh(toggleCollarGeo, chromeMat),
+      `${spec.label} Collar`,
+      'Turned Chrome Bezel',
       spec.note,
       [spec.x * 2, 0.7, spec.z * 2],
       { type: 'toggleGadget', key: spec.key }
     );
-    nut.position.set(spec.x, deckY + 0.0025, spec.z);
-    armrestGroup.add(nut);
+    collar.position.set(spec.x, deckY, spec.z);
+    armrestGroup.add(collar);
+
+    const hexNut = new THREE.Mesh(toggleHexNutGeo, chromeMat);
+    hexNut.position.set(spec.x, deckY + 0.0032, spec.z);
+    armrestGroup.add(hexNut);
 
     const pivot = new THREE.Group();
-    pivot.position.set(spec.x, deckY + 0.005, spec.z);
+    pivot.position.set(spec.x, deckY + 0.0052, spec.z);
     armrestGroup.add(pivot);
 
+    const ball = new THREE.Mesh(toggleBallGeo, chromeMat);
+    pivot.add(ball);
+
     const paddle = register(
-      new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.020, 0.009), matteSwitchMat),
+      new THREE.Mesh(togglePaddleGeo, satinPaddleMat),
       spec.label,
-      'Molded Black Paddle Toggle',
+      'Molded Black Duckbill Toggle',
       spec.note,
       [spec.x * 2, 0.82, spec.z * 2],
       { type: 'toggleGadget', key: spec.key }
     );
-    paddle.position.set(0, 0.010, 0);
     pivot.add(paddle);
     togglePivots[spec.key] = pivot;
+
+    // Flush machined indicator boss forward (+Z) of each toggle
+    const ledRing = new THREE.Mesh(miniRingGeo, machinedAluMat);
+    ledRing.position.set(spec.x, deckY + 0.0007, spec.z + 0.0165);
+    armrestGroup.add(ledRing);
 
     const ledMat = new THREE.MeshStandardMaterial({
       color: spec.color,
       emissive: spec.color,
-      emissiveIntensity: 0.1,
-      roughness: 0.25,
+      emissiveIntensity: 0.08,
+      roughness: 0.2,
     });
-    const led = new THREE.Mesh(new THREE.SphereGeometry(0.0026, 10, 8), ledMat);
-    led.position.set(spec.x, deckY + 0.0015, spec.z + 0.016);
+    const led = new THREE.Mesh(new THREE.CylinderGeometry(0.0014, 0.0014, 0.0016, 12), ledMat);
+    led.position.set(spec.x, deckY + 0.0008, spec.z + 0.0165);
     armrestGroup.add(led);
     switchLeds[spec.key] = ledMat;
   }
 
-  // B. Middle & Rear-Left: 3 Beveled Black Rocker Switches (FRONT GUNS, ROOF HATCH, BULLET SHIELD)
+  // B. Middle & Rear-Left: 3 Beveled & Arched-Shroud Rocker Switches (FRONT GUNS, ROOF HATCH, BULLET SHIELD)
   const rockerSpecs: Array<{
     key: 'wingGuns' | 'roofHatch' | 'bulletShield';
     label: string;
@@ -724,99 +808,217 @@ export function createQBranchCabinRig(
     },
   ];
 
+  // Outer beveled housing frame with recessed inner pocket
+  const rockerFrameShape = createRoundedRectShape(0.041, 0.052, 0.0045);
+  const rockerPocketHole = createRoundedRectShape(0.025, 0.035, 0.0028);
+  rockerFrameShape.holes.push(rockerPocketHole);
+  const rockerFrameGeo = new THREE.ExtrudeGeometry(rockerFrameShape, {
+    depth: 0.0045,
+    bevelEnabled: true,
+    bevelThickness: 0.0014,
+    bevelSize: 0.0012,
+    bevelSegments: 3,
+  });
+  rockerFrameGeo.rotateX(-Math.PI / 2);
+
+  // Curved arched side cheek-guards flanking +/-X of each rocker
+  const archShape = new THREE.Shape();
+  archShape.moveTo(-0.021, 0);
+  archShape.lineTo(0.021, 0);
+  archShape.quadraticCurveTo(0.020, 0.0075, 0, 0.0085);
+  archShape.quadraticCurveTo(-0.020, 0.0075, -0.021, 0);
+  const archGuardGeo = new THREE.ExtrudeGeometry(archShape, {
+    depth: 0.0036,
+    bevelEnabled: true,
+    bevelThickness: 0.0010,
+    bevelSize: 0.0009,
+    bevelSegments: 2,
+    curveSegments: 16,
+  });
+  // Rotate so Z is along length (-0.021..0.021), Y is arch height, X is thickness
+  archGuardGeo.rotateY(Math.PI / 2);
+  archGuardGeo.translate(-0.0018, 0, 0);
+
+  // Beveled tilting rocker paddle + sculpted rounded finger fin
+  const rockerPaddleShape = createRoundedRectShape(0.022, 0.030, 0.0025);
+  const rockerPaddleGeo = new THREE.ExtrudeGeometry(rockerPaddleShape, {
+    depth: 0.0042,
+    bevelEnabled: true,
+    bevelThickness: 0.0012,
+    bevelSize: 0.0010,
+    bevelSegments: 3,
+  });
+  rockerPaddleGeo.rotateX(-Math.PI / 2);
+
+  const finShape = new THREE.Shape();
+  finShape.moveTo(-0.0022, 0);
+  finShape.lineTo(0.0022, 0);
+  finShape.lineTo(0.0016, 0.0065);
+  finShape.absarc(0, 0.0065, 0.0016, 0, Math.PI, false);
+  finShape.lineTo(-0.0022, 0);
+  const rockerFinGeo = new THREE.ExtrudeGeometry(finShape, {
+    depth: 0.017,
+    bevelEnabled: true,
+    bevelThickness: 0.0009,
+    bevelSize: 0.0007,
+    bevelSegments: 2,
+    curveSegments: 12,
+  });
+  rockerFinGeo.rotateY(Math.PI / 2);
+  rockerFinGeo.translate(-0.0085, 0.0042, 0);
+
   for (const spec of rockerSpecs) {
     const housing = register(
-      new THREE.Mesh(new THREE.BoxGeometry(0.040, 0.007, 0.052), matteSwitchMat),
+      new THREE.Mesh(rockerFrameGeo, matteSwitchMat),
       `${spec.label} Housing`,
-      'Beveled Molded Nylon',
+      'Beveled Molded Nylon Shroud',
       spec.note,
       [spec.x * 2, 0.7, spec.z * 2],
       { type: 'toggleGadget', key: spec.key }
     );
-    housing.position.set(spec.x, deckY + 0.0035, spec.z);
+    housing.position.set(spec.x, deckY + 0.001, spec.z);
     armrestGroup.add(housing);
 
+    for (const sideX of [-0.0165, 0.0165]) {
+      const guard = new THREE.Mesh(archGuardGeo, matteSwitchMat);
+      guard.position.set(spec.x + sideX, deckY + 0.0055, spec.z);
+      armrestGroup.add(guard);
+    }
+
     const rockerPivot = new THREE.Group();
-    rockerPivot.position.set(spec.x, deckY + 0.007, spec.z);
+    rockerPivot.position.set(spec.x, deckY + 0.0038, spec.z);
     armrestGroup.add(rockerPivot);
 
     const rockerTab = register(
-      new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.008, 0.028), glossBakeliteMat),
+      new THREE.Mesh(rockerPaddleGeo, satinPaddleMat),
       spec.label,
-      'Tactile Rocker Actuator',
+      'Beveled Tactile Rocker Actuator',
       spec.note,
       [spec.x * 2, 0.82, spec.z * 2],
       { type: 'toggleGadget', key: spec.key }
     );
-    rockerTab.position.set(0, 0.003, 0);
     rockerPivot.add(rockerTab);
 
-    const thumbRidge = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.006, 0.006), matteSwitchMat);
-    thumbRidge.position.set(0, 0.008, 0);
-    rockerPivot.add(thumbRidge);
+    const thumbFin = new THREE.Mesh(rockerFinGeo, satinPaddleMat);
+    rockerPivot.add(thumbFin);
 
     rockerPivots[spec.key] = rockerPivot;
+
+    const ledRing = new THREE.Mesh(miniRingGeo, machinedAluMat);
+    ledRing.position.set(spec.x, deckY + 0.0007, spec.z + 0.032);
+    armrestGroup.add(ledRing);
 
     const ledMat = new THREE.MeshStandardMaterial({
       color: spec.color,
       emissive: spec.color,
-      emissiveIntensity: 0.1,
-      roughness: 0.25,
+      emissiveIntensity: 0.08,
+      roughness: 0.2,
     });
-    const led = new THREE.Mesh(new THREE.SphereGeometry(0.0028, 10, 8), ledMat);
-    led.position.set(spec.x, deckY + 0.0015, spec.z + 0.032);
+    const led = new THREE.Mesh(new THREE.CylinderGeometry(0.0014, 0.0014, 0.0016, 12), ledMat);
+    led.position.set(spec.x, deckY + 0.0008, spec.z + 0.032);
     armrestGroup.add(led);
     switchLeds[spec.key] = ledMat;
   }
 
-  // C. Rear-Right (+X, -Z): Brushed Aluminum E-Gate Plate & Turned Brass Lever (Revolving Plates 1/2/3)
+  // C. Rear-Right (+X, -Z): CNC-Beveled Aluminum E-Gate Plate & Turned Brass Lever (Revolving Plates 1/2/3)
   const gateX = 0.028;
   const gateZ = -0.088;
+
+  const gateOuterShape = createRoundedRectShape(0.046, 0.074, 0.0035);
+  const hw = 0.0036; // E-slot half-width
+  const sxLeft = 0.0074;
+  const sxRight = 0.0146;
+  const tx = -0.013;
+  const by0 = -0.023;
+  const by1 = 0.0;
+  const by2 = 0.023;
+
+  const eVerts = [
+    new THREE.Vector2(sxRight, by0 - hw),
+    new THREE.Vector2(tx, by0 - hw),
+    new THREE.Vector2(tx, by0 + hw),
+    new THREE.Vector2(sxLeft, by0 + hw),
+    new THREE.Vector2(sxLeft, by1 - hw),
+    new THREE.Vector2(tx, by1 - hw),
+    new THREE.Vector2(tx, by1 + hw),
+    new THREE.Vector2(sxLeft, by1 + hw),
+    new THREE.Vector2(sxLeft, by2 - hw),
+    new THREE.Vector2(tx, by2 - hw),
+    new THREE.Vector2(tx, by2 + hw),
+    new THREE.Vector2(sxRight, by2 + hw),
+  ];
+  const eRadii = [
+    0.0036, 0.0035, 0.0035, 0.0032, 0.0032, 0.0035, 0.0035, 0.0032, 0.0032, 0.0035, 0.0035, 0.0036,
+  ];
+  gateOuterShape.holes.push(createFilletedPath(eVerts, eRadii));
+
+  const gatePlateGeo = new THREE.ExtrudeGeometry(gateOuterShape, {
+    depth: 0.0028,
+    bevelEnabled: true,
+    bevelThickness: 0.0010,
+    bevelSize: 0.0009,
+    bevelSegments: 3,
+    curveSegments: 16,
+  });
+  gatePlateGeo.rotateX(-Math.PI / 2);
+
   const gatePlate = register(
-    new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.004, 0.072), machinedAluMat),
+    new THREE.Mesh(gatePlateGeo, machinedAluMat),
     'Revolving Plates E-Gate Plate',
-    'Brushed Aircraft Aluminum',
-    'Slotted 3-position selector gate for the revolving number plates (1: BMT 216A, 2: 4711-EA-62, 3: LU 6789).',
+    'CNC-Machined Brushed Aluminum',
+    'Beveled 3-position E-gate selector plate for the revolving number plates (1: BMT 216A, 2: 4711-EA-62, 3: LU 6789).',
     [0.1, 0.72, -0.25],
     { type: 'cyclePlates' }
   );
-  gatePlate.position.set(gateX, deckY + 0.002, gateZ);
+  gatePlate.position.set(gateX, deckY + 0.0012, gateZ);
   armrestGroup.add(gatePlate);
 
-  const slotSpine = new THREE.Mesh(new THREE.BoxGeometry(0.007, 0.0045, 0.056), darkFlockMat);
-  slotSpine.position.set(gateX + 0.009, deckY + 0.0022, gateZ);
-  armrestGroup.add(slotSpine);
-  for (const sz of [-0.024, 0, 0.024]) {
-    const branch = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.0045, 0.007), darkFlockMat);
-    branch.position.set(gateX - 0.002, deckY + 0.0022, gateZ + sz);
-    armrestGroup.add(branch);
+  // 8 tiny dome-head mounting screws matching reference E-gate corner pairs
+  const screwGeo = new THREE.SphereGeometry(0.0013, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+  const screwCoords: Array<[number, number]> = [
+    [-0.019, -0.032],
+    [-0.014, -0.032],
+    [0.014, -0.032],
+    [0.019, -0.032],
+    [-0.019, 0.032],
+    [-0.014, 0.032],
+    [0.014, 0.032],
+    [0.019, 0.032],
+  ];
+  for (const [sx, sz] of screwCoords) {
+    const screw = new THREE.Mesh(screwGeo, chromeMat);
+    screw.position.set(gateX + sx, deckY + 0.0049, gateZ + sz);
+    armrestGroup.add(screw);
   }
 
-  for (const sx of [-0.017, 0.017]) {
-    for (const sz of [-0.031, 0.031]) {
-      const screw = new THREE.Mesh(new THREE.CylinderGeometry(0.0018, 0.0018, 0.005, 8), chromeMat);
-      screw.position.set(gateX + sx, deckY + 0.0025, gateZ + sz);
-      armrestGroup.add(screw);
-    }
-  }
-
+  // Start in Slot 1 (-Z = -0.023, branch tip X = gateX - 0.010)
   const plateLeverGroup = new THREE.Group();
-  plateLeverGroup.position.set(gateX - 0.008, deckY + 0.004, gateZ - 0.024);
+  plateLeverGroup.position.set(gateX - 0.010, deckY + 0.0015, gateZ - 0.023);
   armrestGroup.add(plateLeverGroup);
 
-  const leverStem = new THREE.Mesh(new THREE.CylinderGeometry(0.0022, 0.0022, 0.014, 12), chromeMat);
-  leverStem.position.set(0, 0.007, 0);
+  const leverStem = new THREE.Mesh(new THREE.CylinderGeometry(0.0022, 0.0022, 0.012, 16), chromeMat);
+  leverStem.position.set(0, 0.006, 0);
   plateLeverGroup.add(leverStem);
 
+  // Turned solid-brass frustum selector knob with chamfered crown
+  const brassKnobPoints = [
+    new THREE.Vector2(0.0023, 0.0105),
+    new THREE.Vector2(0.0040, 0.0110),
+    new THREE.Vector2(0.0044, 0.0145),
+    new THREE.Vector2(0.0064, 0.0235),
+    new THREE.Vector2(0.0071, 0.0275),
+    new THREE.Vector2(0.0067, 0.0289),
+    new THREE.Vector2(0.0056, 0.0294),
+    new THREE.Vector2(0.0, 0.0295),
+  ];
   const brassKnob = register(
-    new THREE.Mesh(new THREE.CylinderGeometry(0.0068, 0.0038, 0.018, 20), brassMat),
+    new THREE.Mesh(new THREE.LatheGeometry(brassKnobPoints, 32), brassMat),
     'Revolving Plates Brass Selector',
     'Turned Solid Brass',
-    '3-position brass gate lever. Click to cycle front & rear revolving number plates (BMT 216A / 4711-EA-62 / LU 6789).',
+    '3-position brass gate lever. Slides cleanly through the E-gate track to cycle plates (BMT 216A / 4711-EA-62 / LU 6789).',
     [0.1, 0.88, -0.28],
     { type: 'cyclePlates' }
   );
-  brassKnob.position.set(0, 0.021, 0);
   plateLeverGroup.add(brassKnob);
 
   return {
@@ -836,7 +1038,8 @@ export function createQBranchCabinRig(
 
 /**
  * Smoothly animates the gear-knob flip-top cap, red button travel,
- * side-hinged armrest lid, 4 paddle toggles, 3 rocker switches, and brass E-gate lever.
+ * side-hinged armrest lid, 4 paddle toggles, 3 rocker switches,
+ * and physically constrained 3-phase E-gate brass selector.
  */
 export function updateQBranchCabinRig(
   rig: QBranchCabinRig,
@@ -880,8 +1083,34 @@ export function updateQBranchCabinRig(
     rig.switchLeds[key].emissiveIntensity = active ? 2.0 : 0.08;
   }
 
-  const baseGateZ = -0.088;
-  const slotOffsets = [-0.024, 0, 0.024];
-  const targetLeverZ = baseGateZ + slotOffsets[state.plateIndex];
-  rig.plateLeverGroup.position.z += (targetLeverZ - rig.plateLeverGroup.position.z) * 0.22;
+  // Physically constrained E-gate path: slide out to spine X -> slide along spine Z -> slide into target branch X
+  const gateX = 0.028;
+  const gateZ = -0.088;
+  const spineX = gateX + 0.011;
+  const branchTipX = gateX - 0.010;
+  const slotOffsets = [-0.023, 0, 0.023];
+  const targetZ = gateZ + slotOffsets[state.plateIndex];
+
+  const pos = rig.plateLeverGroup.position;
+  const step = Math.max(0.0012, lerpFactor * 0.022);
+  const eps = 0.0008;
+
+  if (Math.abs(pos.z - targetZ) > eps) {
+    if (Math.abs(pos.x - spineX) > eps) {
+      const dx = spineX - pos.x;
+      pos.x += Math.sign(dx) * Math.min(Math.abs(dx), step);
+    } else {
+      pos.x = spineX;
+      const dz = targetZ - pos.z;
+      pos.z += Math.sign(dz) * Math.min(Math.abs(dz), step);
+    }
+  } else {
+    pos.z = targetZ;
+    const dx = branchTipX - pos.x;
+    if (Math.abs(dx) > eps) {
+      pos.x += Math.sign(dx) * Math.min(Math.abs(dx), step);
+    } else {
+      pos.x = branchTipX;
+    }
+  }
 }
