@@ -584,40 +584,6 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
           carveGunPortHoles(bodyMesh, leftIndCenter, rightIndCenter, portRadius * 0.94);
         }
 
-        // Carve recessed boot-deck slot for the bullet-resistant rear shield in SK_Trunk_101
-        root.traverse((obj) => {
-          if (!(obj instanceof THREE.Mesh)) return;
-          const n = obj.name.toLowerCase();
-          const m = (Array.isArray(obj.material) ? obj.material[0]?.name : obj.material?.name || '').toLowerCase();
-          if (!n.includes('sk_trunk_101') || !m.includes('133001')) return;
-          const geo = obj.geometry;
-          const posAttr = geo.attributes.position;
-          if (!posAttr) return;
-          const v = new THREE.Vector3();
-          const isSlotTri = (i0: number, i1: number, i2: number) => {
-            const c = new THREE.Vector3();
-            for (const ii of [i0, i1, i2]) {
-              v.fromBufferAttribute(posAttr, ii).applyMatrix4(obj.matrixWorld);
-              c.add(v);
-            }
-            c.divideScalar(3);
-            return Math.abs(c.x) < 0.355 && c.z > -1.725 && c.z < -1.695 && c.y > 0.90;
-          };
-          if (geo.index) {
-            const oldIdx = geo.index.array;
-            const kept: number[] = [];
-            for (let i = 0; i < oldIdx.length; i += 3) {
-              if (!isSlotTri(oldIdx[i], oldIdx[i + 1], oldIdx[i + 2])) {
-                kept.push(oldIdx[i], oldIdx[i + 1], oldIdx[i + 2]);
-              }
-            }
-            if (kept.length !== oldIdx.length) {
-              geo.setIndex(kept);
-              geo.computeBoundingSphere();
-            }
-          }
-        });
-
         const internalParts: InternalPart[] = [];
         let idx = 0;
 

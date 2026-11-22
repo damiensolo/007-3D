@@ -417,12 +417,12 @@ export function createQBranchGadgetsRig(): QBranchGadgetsRig {
   ];
 
   // =========================================================================
-  // 3. BULLET-RESISTANT REAR ARMOR SHIELD (Recessed Boot Cutout + Planar Plate)
+  // 3. BULLET-RESISTANT REAR ARMOR SHIELD (Flush Seam + Planar Steel Plate)
   // =========================================================================
-  // Planar in Z (z = -1.71), matched to SK_Trunk_101 surface y(x, z) = 0.998 + 0.454*(z + 1.71) - 0.38*x^2
+  // Planar in Z (z = -1.71), matched to SK_Trunk_101 crown y(x) = 0.998 - 0.38*x^2
   const SHIELD_Z = -1.71;
   const SHIELD_HALF_W = 0.352;
-  const trunkYAt = (x: number, zOffset = 0) => 0.998 + 0.454 * zOffset - 0.38 * x * x;
+  const trunkCrownDrop = (x: number) => 0.38 * x * x;
 
   const buildCrownedPlanarGeo = (
     halfW: number,
@@ -468,72 +468,29 @@ export function createQBranchGadgetsRig(): QBranchGadgetsRig {
     return geo;
   };
 
-  // Contoured Silver Birch trunk deck bezel with beveled slot cutout & recessed dark pocket
-  const deckShape = new THREE.Shape();
-  const dw = 0.39;
-  const dl = 0.062;
-  deckShape.moveTo(-dw, -dl);
-  deckShape.lineTo(dw, -dl);
-  deckShape.lineTo(dw, dl);
-  deckShape.lineTo(-dw, dl);
-  deckShape.closePath();
-
-  const slotHole = new THREE.Path();
-  const sw = SHIELD_HALF_W + 0.006;
-  const sl = 0.011;
-  slotHole.moveTo(-sw, -sl);
-  slotHole.lineTo(sw, -sl);
-  slotHole.lineTo(sw, sl);
-  slotHole.lineTo(-sw, sl);
-  slotHole.closePath();
-  deckShape.holes.push(slotHole);
-
-  const deckGeo = new THREE.ExtrudeGeometry(deckShape, {
-    depth: 0.006,
-    bevelEnabled: true,
-    bevelThickness: 0.002,
-    bevelSize: 0.002,
-    bevelSegments: 2,
-    curveSegments: 16,
-  });
-  deckGeo.rotateX(-Math.PI / 2);
-  // Conform extruded deck bezel vertices to the exact SK_Trunk_101 surface curvature
-  const deckPos = deckGeo.attributes.position;
-  for (let i = 0; i < deckPos.count; i++) {
-    const vx = deckPos.getX(i);
-    const vy = deckPos.getY(i);
-    const vz = deckPos.getZ(i);
-    deckPos.setY(i, vy + trunkYAt(vx, vz) - 0.005);
-  }
-  deckGeo.computeVertexNormals();
-
-  const slotDeckSurround = register(
-    new THREE.Mesh(deckGeo, silverBirchMat),
-    'Bullet Shield Boot Deck Bezel',
-    'Silver Birch Beveled Trim',
-    'Flush contoured trunk-deck bezel framing the recessed bullet-shield opening.',
-    [0, 0.72, -1.15]
-  );
-  slotDeckSurround.position.set(0, 0, SHIELD_Z);
-  root.add(slotDeckSurround);
-
-  // Dark recessed inner pocket channel (4cm deep) inside the beveled cutout
-  const pocketGeo = buildCrownedPlanarGeo(
-    sw + 0.003,
-    0.022,
-    0.042,
-    (x) => trunkYAt(x, 0) - 0.042,
-    (x) => trunkYAt(x, 0) - 0.042,
+  // Razor-thin flush dark slot seam hugging the untouched SK_Trunk_101 surface
+  const slotBezelGeo = buildCrownedPlanarGeo(
+    SHIELD_HALF_W + 0.005,
+    0.015,
+    0.003,
+    (x) => -trunkCrownDrop(x),
+    (x) => -trunkCrownDrop(x),
     32
   );
-  const slotPocket = new THREE.Mesh(pocketGeo, rubberPadMat);
-  slotPocket.position.set(0, 0, SHIELD_Z);
-  root.add(slotPocket);
+  const slotBezel = register(
+    new THREE.Mesh(slotBezelGeo, rubberPadMat),
+    'Bullet Shield Boot Slot Seam',
+    'Flush Body-Integrated Seal',
+    'Razor-thin concealed slot seam across the upper rear boot lid.',
+    [0, 0.72, -1.15]
+  );
+  slotBezel.position.set(0, 0.9965, SHIELD_Z);
+  root.add(slotBezel);
 
   // Rising planar ballistic steel shield + flush Silver Birch top cap
   // Bottom extends 14cm below the deck so it NEVER floats above the curved trunk sides
   const bulletShieldGroup = new THREE.Group();
-  bulletShieldGroup.position.set(0, 0.672, SHIELD_Z);
+  bulletShieldGroup.position.set(0, 0.671, SHIELD_Z);
   root.add(bulletShieldGroup);
 
   const brushedArmorMat = new THREE.MeshStandardMaterial({
@@ -544,9 +501,9 @@ export function createQBranchGadgetsRig(): QBranchGadgetsRig {
 
   const shieldGeo = buildCrownedPlanarGeo(
     SHIELD_HALF_W,
-    0.009,
+    0.008,
     0.326,
-    (x) => -0.38 * x * x,
+    (x) => -trunkCrownDrop(x),
     () => -0.14,
     32
   );
@@ -554,18 +511,18 @@ export function createQBranchGadgetsRig(): QBranchGadgetsRig {
     new THREE.Mesh(shieldGeo, brushedArmorMat),
     'Bullet-Resistant Rear Shield',
     'Satin Ballistic Armor Steel',
-    'Planar hydraulic armor plate rising vertically from the recessed boot-deck slot.',
+    'Planar hydraulic armor plate rising vertically from the flush boot-deck seam.',
     [0, 0.95, -1.25]
   );
   bulletShieldGroup.add(shieldPlate);
 
-  // Beveled Silver Birch top cap sitting flush inside the beveled cutout when stowed
+  // Silver Birch top cap nested cleanly inside the dark seam when stowed
   const capGeo = buildCrownedPlanarGeo(
-    SHIELD_HALF_W + 0.003,
-    0.014,
-    0.007,
-    (x) => -0.38 * x * x,
-    (x) => -0.38 * x * x,
+    SHIELD_HALF_W + 0.002,
+    0.010,
+    0.005,
+    (x) => -trunkCrownDrop(x),
+    (x) => -trunkCrownDrop(x),
     32
   );
   const shieldCap = register(
@@ -575,7 +532,7 @@ export function createQBranchGadgetsRig(): QBranchGadgetsRig {
     'Body-colored flush cap crowning the bullet-resistant rear shield.',
     [0, 1.05, -1.25]
   );
-  shieldCap.position.set(0, 0.324, 0);
+  shieldCap.position.set(0, 0.325, 0);
   bulletShieldGroup.add(shieldCap);
 
   // =========================================================================
