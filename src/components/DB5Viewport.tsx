@@ -839,8 +839,26 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
 
         registerProceduralSubParts(cabinRig.root.name, 'qbranch_cockpit', cabinRig.subParts);
 
-        // 3. Q-Branch Exterior Gadgets (Revolving Plates, Rams, Bullet Shield, Smoke, Oil, Roof Hatch)
-        const gadgetsRig = createQBranchGadgetsRig();
+        // 3. Q-Branch Exterior Gadgets (sample exact SK_Trunk_101 contour at z = -1.71 for flush bullet shield)
+        const trunkMeshes: THREE.Mesh[] = [];
+        root.traverse((obj) => {
+          if (obj instanceof THREE.Mesh && obj.name.toLowerCase().includes('sk_trunk_101')) {
+            trunkMeshes.push(obj);
+          }
+        });
+        const trunkShieldProfile: Array<{ x: number; y: number }> = [];
+        const trunkRay = new THREE.Raycaster();
+        const trunkDown = new THREE.Vector3(0, -1, 0);
+        for (let i = 0; i <= 36; i++) {
+          const x = -0.36 + (i / 36) * 0.72;
+          trunkRay.set(new THREE.Vector3(x, 1.4, -1.71), trunkDown);
+          const hits = trunkRay.intersectObjects(trunkMeshes, false);
+          if (hits.length > 0) {
+            trunkShieldProfile.push({ x, y: hits[0].point.y });
+          }
+        }
+
+        const gadgetsRig = createQBranchGadgetsRig(trunkShieldProfile);
         scene.add(gadgetsRig.root);
         gadgetsRig.root.updateMatrixWorld(true);
         gadgetsRigRef.current = gadgetsRig;

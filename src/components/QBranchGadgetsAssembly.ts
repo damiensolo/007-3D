@@ -197,441 +197,472 @@ function createRoofHatchUndersideTexture(): THREE.CanvasTexture {
  * 4. Passenger-Side Ejector Seat Roof Hatch
  * 5. Rear Exhaust Smoke Screen (Custom GLSL FBM Cloud Shaders) & Oil Slick (Arc Stream + Iridescent Puddle)
  */
-export function createQBranchGadgetsRig(): QBranchGadgetsRig {
-  const root = new THREE.Group();
-  root.name = 'QBranch_ExteriorGadgets';
+  export function createQBranchGadgetsRig(
+    trunkShieldProfile?: Array<{ x: number; y: number }>
+  ): QBranchGadgetsRig {
+    const root = new THREE.Group();
+    root.name = 'QBranch_ExteriorGadgets';
 
-  const chromeMat = new THREE.MeshStandardMaterial({
-    color: 0xe2e8f0,
-    metalness: 0.96,
-    roughness: 0.08,
-  });
-  const gunmetalMat = new THREE.MeshStandardMaterial({
-    color: 0x262a33,
-    metalness: 0.84,
-    roughness: 0.34,
-  });
-  const brassMat = new THREE.MeshStandardMaterial({
-    color: 0xd4a038,
-    metalness: 0.88,
-    roughness: 0.22,
-  });
-  const rubberPadMat = new THREE.MeshStandardMaterial({
-    color: 0x111317,
-    metalness: 0.05,
-    roughness: 0.82,
-  });
-  const silverBirchMat = new THREE.MeshPhysicalMaterial({
-    color: 0xaab4be,
-    metalness: 0.82,
-    roughness: 0.2,
-    clearcoat: 1.0,
-    clearcoatRoughness: 0.05,
-    envMapIntensity: 1.25,
-  });
-
-  const subParts: GadgetSubPart[] = [];
-  const register = (
-    mesh: THREE.Mesh,
-    label: string,
-    materialLabel: string,
-    qBranchNote: string,
-    semanticDir: [number, number, number]
-  ) => {
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    subParts.push({ mesh, label, materialLabel, qBranchNote, semanticDir });
-    return mesh;
-  };
-
-  // =========================================================================
-  // 1. REVOLVING 3-WAY NUMBER PLATES (Front Valance & Rear Boot)
-  // =========================================================================
-  const plateMats = ([0, 1, 2] as const).map(
-    (v) =>
-      new THREE.MeshStandardMaterial({
-        map: createPlateTexture(v),
-        roughness: 0.26,
-        metalness: 0.22,
-      })
-  );
-
-  const buildPlateAssembly = (isFront: boolean): { group: THREE.Group; drum: THREE.Group } => {
-    const group = new THREE.Group();
-    const plateW = 0.36;
-    const plateH = 0.082;
-    const bezelThick = 0.012;
-
-    // Chamfered chrome surround bezel with rectangular window
-    const outer = new THREE.Shape();
-    outer.moveTo(-plateW / 2 - bezelThick, -plateH / 2 - bezelThick);
-    outer.lineTo(plateW / 2 + bezelThick, -plateH / 2 - bezelThick);
-    outer.lineTo(plateW / 2 + bezelThick, plateH / 2 + bezelThick);
-    outer.lineTo(-plateW / 2 - bezelThick, plateH / 2 + bezelThick);
-    outer.closePath();
-
-    const hole = new THREE.Path();
-    hole.moveTo(-plateW / 2, -plateH / 2);
-    hole.lineTo(plateW / 2, -plateH / 2);
-    hole.lineTo(plateW / 2, plateH / 2);
-    hole.lineTo(-plateW / 2, plateH / 2);
-    hole.closePath();
-    outer.holes.push(hole);
-
-    const bezelGeo = new THREE.ExtrudeGeometry(outer, {
-      depth: 0.014,
-      bevelEnabled: true,
-      bevelThickness: 0.003,
-      bevelSize: 0.003,
-      bevelSegments: 2,
+    const chromeMat = new THREE.MeshStandardMaterial({
+      color: 0xe2e8f0,
+      metalness: 0.96,
+      roughness: 0.08,
     });
-    const bezel = register(
-      new THREE.Mesh(bezelGeo, chromeMat),
-      isFront ? 'Front Revolving Plate Bezel' : 'Rear Revolving Plate Bezel',
-      'Chrome-Plated Brass Frame',
-      'Concealed motorized frame housing the 3-sided rotating identity plates.',
-      isFront ? [0, -0.1, 1.3] : [0, 0.1, -1.3]
+    const gunmetalMat = new THREE.MeshStandardMaterial({
+      color: 0x262a33,
+      metalness: 0.84,
+      roughness: 0.34,
+    });
+    const brassMat = new THREE.MeshStandardMaterial({
+      color: 0xd4a038,
+      metalness: 0.88,
+      roughness: 0.22,
+    });
+    const rubberPadMat = new THREE.MeshStandardMaterial({
+      color: 0x111317,
+      metalness: 0.05,
+      roughness: 0.82,
+    });
+    const silverBirchMat = new THREE.MeshPhysicalMaterial({
+      color: 0xaab4be,
+      metalness: 0.82,
+      roughness: 0.2,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.05,
+      envMapIntensity: 1.25,
+    });
+
+    const subParts: GadgetSubPart[] = [];
+    const register = (
+      mesh: THREE.Mesh,
+      label: string,
+      materialLabel: string,
+      qBranchNote: string,
+      semanticDir: [number, number, number]
+    ) => {
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      subParts.push({ mesh, label, materialLabel, qBranchNote, semanticDir });
+      return mesh;
+    };
+
+    // =========================================================================
+    // 1. REVOLVING 3-WAY NUMBER PLATES (Front Valance & Rear Boot)
+    // =========================================================================
+    const plateMats = ([0, 1, 2] as const).map(
+      (v) =>
+        new THREE.MeshStandardMaterial({
+          map: createPlateTexture(v),
+          roughness: 0.26,
+          metalness: 0.22,
+        })
     );
-    bezel.position.z = -0.008;
-    group.add(bezel);
 
-    // Triangular prism drum rotating around X-axis
-    const drum = new THREE.Group();
-    group.add(drum);
+    const buildPlateAssembly = (isFront: boolean): { group: THREE.Group; drum: THREE.Group } => {
+      const group = new THREE.Group();
+      const plateW = 0.36;
+      const plateH = 0.082;
+      const bezelThick = 0.012;
 
-    const apothem = 0.023;
-    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, plateW - 0.01, 3), gunmetalMat);
-    core.rotation.z = Math.PI / 2;
-    drum.add(core);
+      // Chamfered chrome surround bezel with rectangular window
+      const outer = new THREE.Shape();
+      outer.moveTo(-plateW / 2 - bezelThick, -plateH / 2 - bezelThick);
+      outer.lineTo(plateW / 2 + bezelThick, -plateH / 2 - bezelThick);
+      outer.lineTo(plateW / 2 + bezelThick, plateH / 2 + bezelThick);
+      outer.lineTo(-plateW / 2 - bezelThick, plateH / 2 + bezelThick);
+      outer.closePath();
 
-    const plateFaceGeo = new THREE.BoxGeometry(plateW - 0.006, plateH - 0.004, 0.004);
-    for (let i = 0; i < 3; i++) {
-      const angle = i * ((Math.PI * 2) / 3);
-      const facePivot = new THREE.Group();
-      facePivot.rotation.x = -angle;
-      const faceMesh = register(
-        new THREE.Mesh(plateFaceGeo, plateMats[i]),
-        `${isFront ? 'Front' : 'Rear'} Number Plate (${['BMT 216A', '4711-EA-62', 'LU 6789'][i]})`,
-        'Pressed Aluminum Plate',
-        '3-way Q-Branch identity plate synced to the brass E-gate selector in the center armrest.',
-        isFront ? [0, -0.08, 1.35] : [0, 0.08, -1.35]
+      const hole = new THREE.Path();
+      hole.moveTo(-plateW / 2, -plateH / 2);
+      hole.lineTo(plateW / 2, -plateH / 2);
+      hole.lineTo(plateW / 2, plateH / 2);
+      hole.lineTo(-plateW / 2, plateH / 2);
+      hole.closePath();
+      outer.holes.push(hole);
+
+      const bezelGeo = new THREE.ExtrudeGeometry(outer, {
+        depth: 0.014,
+        bevelEnabled: true,
+        bevelThickness: 0.003,
+        bevelSize: 0.003,
+        bevelSegments: 2,
+      });
+      const bezel = register(
+        new THREE.Mesh(bezelGeo, chromeMat),
+        isFront ? 'Front Revolving Plate Bezel' : 'Rear Revolving Plate Bezel',
+        'Chrome-Plated Brass Frame',
+        'Concealed motorized frame housing the 3-sided rotating identity plates.',
+        isFront ? [0, -0.1, 1.3] : [0, 0.1, -1.3]
       );
-      faceMesh.position.z = apothem;
-      facePivot.add(faceMesh);
-      drum.add(facePivot);
-    }
+      bezel.position.z = -0.008;
+      group.add(bezel);
 
-    return { group, drum };
-  };
+      // Triangular prism drum rotating around X-axis
+      const drum = new THREE.Group();
+      group.add(drum);
 
-  const frontPlate = buildPlateAssembly(true);
-  frontPlate.group.position.set(0, 0.342, 2.258);
-  root.add(frontPlate.group);
+      const apothem = 0.023;
+      const core = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, plateW - 0.01, 3), gunmetalMat);
+      core.rotation.z = Math.PI / 2;
+      drum.add(core);
 
-  const rearPlate = buildPlateAssembly(false);
-  rearPlate.group.position.set(0, 0.635, -2.194);
-  rearPlate.group.rotation.y = Math.PI;
-  rearPlate.group.rotation.x = 0.12; // Matches DB5 rear boot slope
-  root.add(rearPlate.group);
+      const plateFaceGeo = new THREE.BoxGeometry(plateW - 0.006, plateH - 0.004, 0.004);
+      for (let i = 0; i < 3; i++) {
+        const angle = i * ((Math.PI * 2) / 3);
+        const facePivot = new THREE.Group();
+        facePivot.rotation.x = -angle;
+        const faceMesh = register(
+          new THREE.Mesh(plateFaceGeo, plateMats[i]),
+          `${isFront ? 'Front' : 'Rear'} Number Plate (${['BMT 216A', '4711-EA-62', 'LU 6789'][i]})`,
+          'Pressed Aluminum Plate',
+          '3-way Q-Branch identity plate synced to the brass E-gate selector in the center armrest.',
+          isFront ? [0, -0.08, 1.35] : [0, 0.08, -1.35]
+        );
+        faceMesh.position.z = apothem;
+        facePivot.add(faceMesh);
+        drum.add(facePivot);
+      }
 
-  // =========================================================================
-  // 2. FRONT & REAR HYDRAULIC BATTERING RAMS
-  // =========================================================================
-  const buildRamUnit = (x: number, y: number, z: number, isFront: boolean): THREE.Group => {
-    const unit = new THREE.Group();
-    unit.position.set(x, y, z);
-    if (!isFront) unit.rotation.y = Math.PI;
-    root.add(unit);
+      return { group, drum };
+    };
 
-    // Fixed outer hydraulic sleeve + brass gland nut
-    const sleeve = register(
-      new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.14, 18), gunmetalMat),
-      `${isFront ? 'Front' : 'Rear'} Ram Hydraulic Cylinder`,
-      'High-Pressure Steel Sleeve',
-      'Concealed bumper-mount hydraulic ram cylinder.',
-      [x * 0.5, 0, isFront ? 1.15 : -1.15]
-    );
-    sleeve.rotation.x = Math.PI / 2;
-    sleeve.position.z = -0.07;
-    unit.add(sleeve);
+    const frontPlate = buildPlateAssembly(true);
+    frontPlate.group.position.set(0, 0.342, 2.258);
+    root.add(frontPlate.group);
 
-    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.020, 0.020, 0.016, 16), brassMat);
-    collar.rotation.x = Math.PI / 2;
-    collar.position.z = -0.005;
-    unit.add(collar);
+    const rearPlate = buildPlateAssembly(false);
+    rearPlate.group.position.set(0, 0.635, -2.194);
+    rearPlate.group.rotation.y = Math.PI;
+    rearPlate.group.rotation.x = 0.12; // Matches DB5 rear boot slope
+    root.add(rearPlate.group);
 
-    // Telescoping piston + sculpted chrome/rubber over-rider head
-    const ramHead = new THREE.Group();
-    unit.add(ramHead);
+    // =========================================================================
+    // 2. FRONT & REAR HYDRAULIC BATTERING RAMS
+    // =========================================================================
+    const buildRamUnit = (x: number, y: number, z: number, isFront: boolean): THREE.Group => {
+      const unit = new THREE.Group();
+      unit.position.set(x, y, z);
+      if (!isFront) unit.rotation.y = Math.PI;
+      root.add(unit);
 
-    const piston = register(
-      new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.28, 16), chromeMat),
-      `${isFront ? 'Front' : 'Rear'} Ram Piston Rod`,
-      'Hard-Chrome Hydraulic Rod',
-      'Telescoping steel piston extending the bumper over-rider 26cm forward on command.',
-      [x * 0.6, 0, isFront ? 1.35 : -1.35]
-    );
-    piston.rotation.x = Math.PI / 2;
-    piston.position.z = -0.14;
-    ramHead.add(piston);
-
-    // Classic DB5 vertical over-rider silhouette
-    const overRiderShape = new THREE.Shape();
-    overRiderShape.moveTo(-0.028, -0.065);
-    overRiderShape.lineTo(0.028, -0.065);
-    overRiderShape.quadraticCurveTo(0.036, 0, 0.024, 0.068);
-    overRiderShape.lineTo(-0.024, 0.068);
-    overRiderShape.quadraticCurveTo(-0.036, 0, -0.028, -0.065);
-
-    const overRiderGeo = new THREE.ExtrudeGeometry(overRiderShape, {
-      depth: 0.042,
-      bevelEnabled: true,
-      bevelThickness: 0.008,
-      bevelSize: 0.006,
-      bevelSegments: 3,
-    });
-    const overRider = register(
-      new THREE.Mesh(overRiderGeo, chromeMat),
-      `${isFront ? 'Front' : 'Rear'} Hydraulic Battering Ram`,
-      'Reinforced Chrome Over-Rider',
-      'Heavy-duty Q-Branch hydraulic ramming bumper horn.',
-      [x * 0.8, 0.05, isFront ? 1.45 : -1.45]
-    );
-    overRider.position.z = -0.01;
-    ramHead.add(overRider);
-
-    const rubberPad = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.095, 0.016), rubberPadMat);
-    rubberPad.position.z = 0.038;
-    ramHead.add(rubberPad);
-
-    return ramHead;
-  };
-
-  const frontRams = [
-    buildRamUnit(-0.30, 0.428, 2.255, true),
-    buildRamUnit(0.30, 0.428, 2.255, true),
-  ];
-  const rearRams = [
-    buildRamUnit(-0.34, 0.455, -2.265, false),
-    buildRamUnit(0.34, 0.455, -2.265, false),
-  ];
-
-  // =========================================================================
-  // 3. BULLET-RESISTANT REAR ARMOR SHIELD (Flush Seam + Planar Steel Plate)
-  // =========================================================================
-  // Planar in Z (z = -1.71), matched to SK_Trunk_101 crown y(x) = 0.998 - 0.38*x^2
-  const SHIELD_Z = -1.71;
-  const SHIELD_HALF_W = 0.352;
-  const trunkCrownDrop = (x: number) => 0.38 * x * x;
-
-  const buildCrownedPlanarGeo = (
-    halfW: number,
-    thicknessZ: number,
-    height: number,
-    topYOffset: (x: number) => number,
-    botYOffset: (x: number) => number,
-    segs = 32
-  ): THREE.BufferGeometry => {
-    const positions: number[] = [];
-    const indices: number[] = [];
-    const halfT = thicknessZ / 2;
-
-    for (let i = 0; i <= segs; i++) {
-      const u = i / segs;
-      const x = (u * 2 - 1) * halfW;
-      const yBot = botYOffset(x);
-      const yTop = height + topYOffset(x);
-      positions.push(
-        x, yBot, +halfT,
-        x, yTop, +halfT,
-        x, yTop, -halfT,
-        x, yBot, -halfT
+      // Fixed outer hydraulic sleeve + brass gland nut
+      const sleeve = register(
+        new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.14, 18), gunmetalMat),
+        `${isFront ? 'Front' : 'Rear'} Ram Hydraulic Cylinder`,
+        'High-Pressure Steel Sleeve',
+        'Concealed bumper-mount hydraulic ram cylinder.',
+        [x * 0.5, 0, isFront ? 1.15 : -1.15]
       );
-    }
+      sleeve.rotation.x = Math.PI / 2;
+      sleeve.position.z = -0.07;
+      unit.add(sleeve);
 
-    for (let i = 0; i < segs; i++) {
-      const a = i * 4;
-      const b = (i + 1) * 4;
-      indices.push(a + 0, b + 0, b + 1, a + 0, b + 1, a + 1);
-      indices.push(a + 1, b + 1, b + 2, a + 1, b + 2, a + 2);
-      indices.push(a + 2, b + 2, b + 3, a + 2, b + 3, a + 3);
-      indices.push(a + 3, b + 3, b + 0, a + 3, b + 0, a + 0);
-    }
-    indices.push(0, 1, 2, 0, 2, 3);
-    const last = segs * 4;
-    indices.push(last + 0, last + 2, last + 1, last + 0, last + 3, last + 2);
+      const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.020, 0.020, 0.016, 16), brassMat);
+      collar.rotation.x = Math.PI / 2;
+      collar.position.z = -0.005;
+      unit.add(collar);
 
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geo.setIndex(indices);
-    geo.computeVertexNormals();
-    return geo;
-  };
+      // Telescoping piston + sculpted chrome/rubber over-rider head
+      const ramHead = new THREE.Group();
+      unit.add(ramHead);
 
-  // Razor-thin flush dark slot seam hugging the untouched SK_Trunk_101 surface
-  const slotBezelGeo = buildCrownedPlanarGeo(
-    SHIELD_HALF_W + 0.005,
-    0.015,
-    0.003,
-    (x) => -trunkCrownDrop(x),
-    (x) => -trunkCrownDrop(x),
-    32
-  );
-  const slotBezel = register(
-    new THREE.Mesh(slotBezelGeo, rubberPadMat),
-    'Bullet Shield Boot Slot Seam',
-    'Flush Body-Integrated Seal',
-    'Razor-thin concealed slot seam across the upper rear boot lid.',
-    [0, 0.72, -1.15]
-  );
-  slotBezel.position.set(0, 0.9965, SHIELD_Z);
-  root.add(slotBezel);
+      const piston = register(
+        new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.28, 16), chromeMat),
+        `${isFront ? 'Front' : 'Rear'} Ram Piston Rod`,
+        'Hard-Chrome Hydraulic Rod',
+        'Telescoping steel piston extending the bumper over-rider 26cm forward on command.',
+        [x * 0.6, 0, isFront ? 1.35 : -1.35]
+      );
+      piston.rotation.x = Math.PI / 2;
+      piston.position.z = -0.14;
+      ramHead.add(piston);
 
-  // Rising planar ballistic steel shield + flush Silver Birch top cap
-  // Bottom extends 14cm below the deck so it NEVER floats above the curved trunk sides
-  const bulletShieldGroup = new THREE.Group();
-  bulletShieldGroup.position.set(0, 0.671, SHIELD_Z);
-  root.add(bulletShieldGroup);
+      // Classic DB5 vertical over-rider silhouette
+      const overRiderShape = new THREE.Shape();
+      overRiderShape.moveTo(-0.028, -0.065);
+      overRiderShape.lineTo(0.028, -0.065);
+      overRiderShape.quadraticCurveTo(0.036, 0, 0.024, 0.068);
+      overRiderShape.lineTo(-0.024, 0.068);
+      overRiderShape.quadraticCurveTo(-0.036, 0, -0.028, -0.065);
 
-  const brushedArmorMat = new THREE.MeshStandardMaterial({
-    color: 0xb4bcc6,
-    metalness: 0.56,
-    roughness: 0.32,
-  });
+      const overRiderGeo = new THREE.ExtrudeGeometry(overRiderShape, {
+        depth: 0.042,
+        bevelEnabled: true,
+        bevelThickness: 0.008,
+        bevelSize: 0.006,
+        bevelSegments: 3,
+      });
+      const overRider = register(
+        new THREE.Mesh(overRiderGeo, chromeMat),
+        `${isFront ? 'Front' : 'Rear'} Hydraulic Battering Ram`,
+        'Reinforced Chrome Over-Rider',
+        'Heavy-duty Q-Branch hydraulic ramming bumper horn.',
+        [x * 0.8, 0.05, isFront ? 1.45 : -1.45]
+      );
+      overRider.position.z = -0.01;
+      ramHead.add(overRider);
 
-  const shieldGeo = buildCrownedPlanarGeo(
-    SHIELD_HALF_W,
-    0.008,
-    0.326,
-    (x) => -trunkCrownDrop(x),
-    () => -0.14,
-    32
-  );
-  const shieldPlate = register(
-    new THREE.Mesh(shieldGeo, brushedArmorMat),
-    'Bullet-Resistant Rear Shield',
-    'Satin Ballistic Armor Steel',
-    'Planar hydraulic armor plate rising vertically from the flush boot-deck seam.',
-    [0, 0.95, -1.25]
-  );
-  bulletShieldGroup.add(shieldPlate);
+      const rubberPad = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.095, 0.016), rubberPadMat);
+      rubberPad.position.z = 0.038;
+      ramHead.add(rubberPad);
 
-  // Silver Birch top cap nested cleanly inside the dark seam when stowed
-  const capGeo = buildCrownedPlanarGeo(
-    SHIELD_HALF_W + 0.002,
-    0.010,
-    0.005,
-    (x) => -trunkCrownDrop(x),
-    (x) => -trunkCrownDrop(x),
-    32
-  );
-  const shieldCap = register(
-    new THREE.Mesh(capGeo, silverBirchMat),
-    'Bullet Shield Top Cap',
-    'Silver Birch Aluminum Trim',
-    'Body-colored flush cap crowning the bullet-resistant rear shield.',
-    [0, 1.05, -1.25]
-  );
-  shieldCap.position.set(0, 0.325, 0);
-  bulletShieldGroup.add(shieldCap);
+      return ramHead;
+    };
 
-  // =========================================================================
-  // 4. PASSENGER EJECTOR SEAT ROOF HATCH (RHD: Passenger = +X)
-  // =========================================================================
-  const roofHatchPivot = new THREE.Group();
-  // Hinge along outer passenger edge (x = +0.50) so it swings open cleanly
-  roofHatchPivot.position.set(0.49, 1.325, -0.15);
-  root.add(roofHatchPivot);
+    const frontRams = [
+      buildRamUnit(-0.30, 0.428, 2.255, true),
+      buildRamUnit(0.30, 0.428, 2.255, true),
+    ];
+    const rearRams = [
+      buildRamUnit(-0.34, 0.455, -2.265, false),
+      buildRamUnit(0.34, 0.455, -2.265, false),
+    ];
 
-  const hatchOuter = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.014, 0.56), silverBirchMat);
-  register(
-    hatchOuter,
-    'Ejector Seat Roof Hatch',
-    'Silver Birch Aluminum Panel',
-    'Explosive-bolt passenger roof panel linked to the Q-Branch Roof Hatch arming switch.',
-    [0.55, 1.35, 0]
-  );
-  hatchOuter.position.set(-0.225, 0.012, 0);
-  roofHatchPivot.add(hatchOuter);
+    // =========================================================================
+    // 3. BULLET-RESISTANT REAR ARMOR SHIELD (Raycast-Fitted Trunk Slot + Planar Plate)
+    // =========================================================================
+    const SHIELD_Z = -1.71;
+    const SHIELD_HALF_W = 0.348;
 
-  const hatchUnderMat = new THREE.MeshStandardMaterial({
-    map: createRoofHatchUndersideTexture(),
-    roughness: 0.45,
-    metalness: 0.2,
-  });
-  const hatchInner = new THREE.Mesh(new THREE.PlaneGeometry(0.41, 0.52), hatchUnderMat);
-  hatchInner.rotation.x = Math.PI / 2;
-  hatchInner.position.set(-0.225, 0.004, 0);
-  roofHatchPivot.add(hatchInner);
+    // Interpolate exact raycasted SK_Trunk_101 surface Y(x) so slot & cap never sink or gap
+    const sampleTrunkY = (x: number): number => {
+      if (!trunkShieldProfile || trunkShieldProfile.length === 0) {
+        return 0.994 - 0.32 * x * x;
+      }
+      const pts = trunkShieldProfile;
+      if (x <= pts[0].x) return pts[0].y;
+      if (x >= pts[pts.length - 1].x) return pts[pts.length - 1].y;
+      for (let i = 0; i < pts.length - 1; i++) {
+        if (x >= pts[i].x && x <= pts[i + 1].x) {
+          const t = (x - pts[i].x) / (pts[i + 1].x - pts[i].x);
+          return pts[i].y + (pts[i + 1].y - pts[i].y) * t;
+        }
+      }
+      return pts[0].y;
+    };
+    const centerTrunkY = sampleTrunkY(0);
 
-  // =========================================================================
-  // 5. REAR SMOKE SCREEN & OIL SLICK HARDWARE + CUSTOM GLSL FX
-  // =========================================================================
-  for (const sideX of [-0.43, 0.43]) {
-    const smokeNozzle = register(
-      new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.018, 0.09, 16), gunmetalMat),
-      'Rear Smoke Screen Nozzle',
-      'Heat-Treated Exhaust Shroud',
-      'High-output smoke oil injector mounted beside the twin exhaust pipes.',
-      [sideX * 0.6, -0.1, -1.25]
+    const buildCrownedPlanarGeo = (
+      halfW: number,
+      thicknessZ: number,
+      topYAt: (x: number) => number,
+      botYAt: (x: number) => number,
+      bevelZ = 0.0,
+      segs = 32
+    ): THREE.BufferGeometry => {
+      const positions: number[] = [];
+      const indices: number[] = [];
+      const halfT = thicknessZ / 2;
+      const innerT = Math.max(0.001, halfT - bevelZ);
+
+      for (let i = 0; i <= segs; i++) {
+        const u = i / segs;
+        const x = (u * 2 - 1) * halfW;
+        const yBot = botYAt(x);
+        const yTop = topYAt(x);
+        positions.push(
+          x, yBot, +halfT,
+          x, yTop, +innerT,
+          x, yTop, -innerT,
+          x, yBot, -halfT
+        );
+      }
+
+      for (let i = 0; i < segs; i++) {
+        const a = i * 4;
+        const b = (i + 1) * 4;
+        indices.push(a + 0, b + 0, b + 1, a + 0, b + 1, a + 1);
+        indices.push(a + 1, b + 1, b + 2, a + 1, b + 2, a + 2);
+        indices.push(a + 2, b + 2, b + 3, a + 2, b + 3, a + 3);
+        indices.push(a + 3, b + 3, b + 0, a + 3, b + 0, a + 0);
+      }
+      indices.push(0, 1, 2, 0, 2, 3);
+      const last = segs * 4;
+      indices.push(last + 0, last + 2, last + 1, last + 0, last + 3, last + 2);
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geo.setIndex(indices);
+      geo.computeVertexNormals();
+      return geo;
+    };
+
+    // Beveled dark rubber/anodized slot frame matching the exact shield width & trunk Y(x)
+    const slotBezelGeo = buildCrownedPlanarGeo(
+    SHIELD_HALF_W + 0.007,
+      0.017,
+      (x) => sampleTrunkY(x) + 0.0032,
+      (x) => sampleTrunkY(x) - 0.0025,
+      0.0022,
+      36
     );
-    smokeNozzle.rotation.x = Math.PI / 2;
-    smokeNozzle.position.set(sideX, 0.295, -2.265);
-    root.add(smokeNozzle);
-  }
-
-  for (const sideX of [-0.19, 0.19]) {
-    const oilNozzle = register(
-      new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.014, 0.07, 14), brassMat),
-      'Rear Oil Slick Injector',
-      'Turned Brass Pressure Nozzle',
-      'Pressurized under-valance nozzle spraying slick hydraulic oil behind the rear tyres.',
-      [sideX * 0.5, -0.15, -1.2]
+    const slotBezel = register(
+      new THREE.Mesh(slotBezelGeo, rubberPadMat),
+      'Bullet Shield Boot Slot Seal',
+      'Beveled Weatherstrip Seal',
+      'Flush-fitted beveled slot channel across the upper rear boot lid.',
+      [0, 0.72, -1.15]
     );
-    oilNozzle.rotation.x = Math.PI / 2 + 0.18;
-    oilNozzle.position.set(sideX, 0.265, -2.235);
-    root.add(oilNozzle);
-  }
+    slotBezel.position.set(0, 0, SHIELD_Z);
+    root.add(slotBezel);
 
-  // --- A. Volumetric Billowing Smoke Screen (Half-Lambert Lit FBM Cloud Shader) ---
-  const SMOKE_COUNT = 420;
-  const smokePositions = new Float32Array(SMOKE_COUNT * 3);
-  const smokeAges = new Float32Array(SMOKE_COUNT);
-  const smokeSizes = new Float32Array(SMOKE_COUNT);
-  const smokeSeeds = new Float32Array(SMOKE_COUNT);
-  const smokeRots = new Float32Array(SMOKE_COUNT);
-  const smokeParticles: SmokeParticle[] = [];
+    // Dark inner recess strip inside the bezel so the slot reads as a physical opening
+    const slotWellGeo = buildCrownedPlanarGeo(
+      SHIELD_HALF_W + 0.003,
+      0.011,
+      (x) => sampleTrunkY(x) + 0.0034,
+      (x) => sampleTrunkY(x) + 0.0010,
+      0.0,
+      36
+    );
+    const slotWell = new THREE.Mesh(slotWellGeo, new THREE.MeshBasicMaterial({ color: 0x050608 }));
+    slotWell.position.set(0, 0, SHIELD_Z);
+    root.add(slotWell);
 
-  for (let i = 0; i < SMOKE_COUNT; i++) {
-    smokeParticles.push({
-      active: false,
-      age: 0,
-      life: 3.4,
-      pos: new THREE.Vector3(0, -10, 0),
-      vel: new THREE.Vector3(),
-      baseSize: 1.0,
-      seed: Math.random() * 100,
-      rot: Math.random() * Math.PI * 2,
+    // Rising planar ballistic steel shield + flush Silver Birch top cap
+    // Stowed offset = -0.326m so top cap sits flush inside the beveled slot bezel
+    const bulletShieldGroup = new THREE.Group();
+    bulletShieldGroup.position.set(0, -0.326, SHIELD_Z);
+    root.add(bulletShieldGroup);
+
+    const brushedArmorMat = new THREE.MeshStandardMaterial({
+      color: 0xc2c8d0,
+      metalness: 0.36,
+      roughness: 0.38,
     });
-    smokePositions[i * 3 + 1] = -10;
-  }
 
-  const smokeGeo = new THREE.BufferGeometry();
-  smokeGeo.setAttribute('position', new THREE.BufferAttribute(smokePositions, 3));
-  smokeGeo.setAttribute('aAge', new THREE.BufferAttribute(smokeAges, 1));
-  smokeGeo.setAttribute('aSize', new THREE.BufferAttribute(smokeSizes, 1));
-  smokeGeo.setAttribute('aSeed', new THREE.BufferAttribute(smokeSeeds, 1));
-  smokeGeo.setAttribute('aRot', new THREE.BufferAttribute(smokeRots, 1));
+    const shieldGeo = buildCrownedPlanarGeo(
+      SHIELD_HALF_W,
+      0.008,
+        (x) => sampleTrunkY(x) + 0.326,
+          () => centerTrunkY - 0.16,
+          0.0,
+          36
+  );
+    const shieldPlate = register(
+      new THREE.Mesh(shieldGeo, brushedArmorMat),
+      'Bullet-Resistant Rear Shield',
+      'Satin Ballistic Armor Steel',
+      'Planar hydraulic armor plate rising vertically from the flush boot-deck slot.',
+      [0, 0.95, -1.25]
+    );
+    bulletShieldGroup.add(shieldPlate);
 
-  const smokeMat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.NormalBlending,
-    uniforms: {
-      uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
-      uLightDir: { value: new THREE.Vector3(0.4, 0.85, 0.35).normalize() },
-    },
-    vertexShader: `
+    // Beveled Silver Birch top cap sitting flush inside the slot bezel when stowed
+    const capGeo = buildCrownedPlanarGeo(
+    SHIELD_HALF_W + 0.003,
+      0.012,
+      (x) => sampleTrunkY(x) + 0.3302,
+      (x) => sampleTrunkY(x) + 0.324,
+      0.0015,
+      36
+    );
+    const shieldCap = register(
+      new THREE.Mesh(capGeo, silverBirchMat),
+      'Bullet Shield Top Cap',
+      'Silver Birch Aluminum Trim',
+      'Body-colored flush cap crowning the bullet-resistant rear shield.',
+      [0, 1.05, -1.25]
+    );
+    bulletShieldGroup.add(shieldCap);
+
+    // =========================================================================
+    // 4. PASSENGER EJECTOR SEAT ROOF HATCH (RHD: Passenger = +X)
+    // =========================================================================
+    const roofHatchPivot = new THREE.Group();
+    // Hinge along outer passenger edge (x = +0.50) so it swings open cleanly
+    roofHatchPivot.position.set(0.49, 1.325, -0.15);
+    root.add(roofHatchPivot);
+
+    const hatchOuter = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.014, 0.56), silverBirchMat);
+    register(
+      hatchOuter,
+      'Ejector Seat Roof Hatch',
+      'Silver Birch Aluminum Panel',
+      'Explosive-bolt passenger roof panel linked to the Q-Branch Roof Hatch arming switch.',
+      [0.55, 1.35, 0]
+    );
+    hatchOuter.position.set(-0.225, 0.012, 0);
+    roofHatchPivot.add(hatchOuter);
+
+    const hatchUnderMat = new THREE.MeshStandardMaterial({
+      map: createRoofHatchUndersideTexture(),
+      roughness: 0.45,
+      metalness: 0.2,
+    });
+    const hatchInner = new THREE.Mesh(new THREE.PlaneGeometry(0.41, 0.52), hatchUnderMat);
+    hatchInner.rotation.x = Math.PI / 2;
+    hatchInner.position.set(-0.225, 0.004, 0);
+    roofHatchPivot.add(hatchInner);
+
+    // =========================================================================
+    // 5. REAR SMOKE SCREEN & OIL SLICK HARDWARE + CUSTOM GLSL FX
+    // =========================================================================
+    for (const sideX of [-0.43, 0.43]) {
+      const smokeNozzle = register(
+        new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.018, 0.09, 16), gunmetalMat),
+        'Rear Smoke Screen Nozzle',
+        'Heat-Treated Exhaust Shroud',
+        'High-output smoke oil injector mounted beside the twin exhaust pipes.',
+        [sideX * 0.6, -0.1, -1.25]
+      );
+      smokeNozzle.rotation.x = Math.PI / 2;
+      smokeNozzle.position.set(sideX, 0.295, -2.265);
+      root.add(smokeNozzle);
+    }
+
+    for (const sideX of [-0.19, 0.19]) {
+      const oilNozzle = register(
+        new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.014, 0.07, 14), brassMat),
+        'Rear Oil Slick Injector',
+        'Turned Brass Pressure Nozzle',
+        'Pressurized under-valance nozzle spraying slick hydraulic oil behind the rear tyres.',
+        [sideX * 0.5, -0.15, -1.2]
+      );
+      oilNozzle.rotation.x = Math.PI / 2 + 0.18;
+      oilNozzle.position.set(sideX, 0.265, -2.235);
+      root.add(oilNozzle);
+    }
+
+    // --- A. Volumetric Billowing Smoke Screen (Half-Lambert Lit FBM Cloud Shader) ---
+    const SMOKE_COUNT = 420;
+    const smokePositions = new Float32Array(SMOKE_COUNT * 3);
+    const smokeAges = new Float32Array(SMOKE_COUNT);
+    const smokeSizes = new Float32Array(SMOKE_COUNT);
+    const smokeSeeds = new Float32Array(SMOKE_COUNT);
+    const smokeRots = new Float32Array(SMOKE_COUNT);
+    const smokeParticles: SmokeParticle[] = [];
+
+    for (let i = 0; i < SMOKE_COUNT; i++) {
+      smokeParticles.push({
+        active: false,
+        age: 0,
+        life: 3.4,
+        pos: new THREE.Vector3(0, -10, 0),
+        vel: new THREE.Vector3(),
+        baseSize: 1.0,
+        seed: Math.random() * 100,
+        rot: Math.random() * Math.PI * 2,
+      });
+      smokePositions[i * 3 + 1] = -10;
+    }
+
+    const smokeGeo = new THREE.BufferGeometry();
+    smokeGeo.setAttribute('position', new THREE.BufferAttribute(smokePositions, 3));
+    smokeGeo.setAttribute('aAge', new THREE.BufferAttribute(smokeAges, 1));
+    smokeGeo.setAttribute('aSize', new THREE.BufferAttribute(smokeSizes, 1));
+    smokeGeo.setAttribute('aSeed', new THREE.BufferAttribute(smokeSeeds, 1));
+    smokeGeo.setAttribute('aRot', new THREE.BufferAttribute(smokeRots, 1));
+
+    const smokeMat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.NormalBlending,
+      uniforms: {
+        uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
+        uLightDir: { value: new THREE.Vector3(0.4, 0.85, 0.35).normalize() },
+      },
+      vertexShader: `
       attribute float aAge;
       attribute float aSize;
       attribute float aSeed;
@@ -650,7 +681,7 @@ export function createQBranchGadgetsRig(): QBranchGadgetsRig {
         gl_PointSize = aSize * grow * uPixelRatio * (620.0 / max(0.5, -mvPosition.z));
       }
     `,
-    fragmentShader: `
+      fragmentShader: `
       uniform vec3 uLightDir;
       varying float vAge;
       varying float vSeed;
@@ -706,46 +737,46 @@ export function createQBranchGadgetsRig(): QBranchGadgetsRig {
         gl_FragColor = vec4(col, alpha);
       }
     `,
-  });
-
-  const smokePoints = new THREE.Points(smokeGeo, smokeMat);
-  smokePoints.frustumCulled = false;
-  smokePoints.renderOrder = 50; // Always render after transparent car glass, lights, dashboard, and badges
-  root.add(smokePoints);
-
-  // --- B. Pressurized Oil Slick Arc Stream (InstancedMesh) + Wet Specular Iridescent Puddle ---
-  const OIL_COUNT = 120;
-  const oilDroplets: OilDroplet[] = [];
-  for (let i = 0; i < OIL_COUNT; i++) {
-    oilDroplets.push({
-      active: false,
-      age: 0,
-      life: 0.7,
-      pos: new THREE.Vector3(0, -10, 0),
-      vel: new THREE.Vector3(),
     });
-  }
-  const oilDropGeo = new THREE.SphereGeometry(0.016, 8, 6);
-  const oilDropMat = new THREE.MeshPhysicalMaterial({
-    color: 0x050507,
-    roughness: 0.08,
-    metalness: 0.05,
-    clearcoat: 0.55,
-    clearcoatRoughness: 0.08,
-    envMapIntensity: 0.25,
-  });
-  const oilInstanced = new THREE.InstancedMesh(oilDropGeo, oilDropMat, OIL_COUNT);
-  oilInstanced.frustumCulled = false;
-  root.add(oilInstanced);
 
-  const oilPuddleMat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    uniforms: {
-      uSpread: { value: 0.0 },
-      uTime: { value: 0.0 },
-    },
-    vertexShader: `
+    const smokePoints = new THREE.Points(smokeGeo, smokeMat);
+    smokePoints.frustumCulled = false;
+    smokePoints.renderOrder = 50; // Always render after transparent car glass, lights, dashboard, and badges
+    root.add(smokePoints);
+
+    // --- B. Pressurized Oil Slick Arc Stream (InstancedMesh) + Wet Specular Iridescent Puddle ---
+    const OIL_COUNT = 120;
+    const oilDroplets: OilDroplet[] = [];
+    for (let i = 0; i < OIL_COUNT; i++) {
+      oilDroplets.push({
+        active: false,
+        age: 0,
+        life: 0.7,
+        pos: new THREE.Vector3(0, -10, 0),
+        vel: new THREE.Vector3(),
+      });
+    }
+    const oilDropGeo = new THREE.SphereGeometry(0.016, 8, 6);
+    const oilDropMat = new THREE.MeshPhysicalMaterial({
+      color: 0x050507,
+      roughness: 0.08,
+      metalness: 0.05,
+      clearcoat: 0.55,
+      clearcoatRoughness: 0.08,
+      envMapIntensity: 0.25,
+    });
+    const oilInstanced = new THREE.InstancedMesh(oilDropGeo, oilDropMat, OIL_COUNT);
+    oilInstanced.frustumCulled = false;
+    root.add(oilInstanced);
+
+    const oilPuddleMat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      uniforms: {
+        uSpread: { value: 0.0 },
+        uTime: { value: 0.0 },
+      },
+      vertexShader: `
       varying vec2 vUv;
       varying vec3 vWorldPos;
       void main() {
@@ -755,7 +786,7 @@ export function createQBranchGadgetsRig(): QBranchGadgetsRig {
         gl_Position = projectionMatrix * viewMatrix * wp;
       }
     `,
-    fragmentShader: `
+      fragmentShader: `
       varying vec2 vUv;
       varying vec3 vWorldPos;
       uniform float uSpread;
@@ -814,171 +845,171 @@ export function createQBranchGadgetsRig(): QBranchGadgetsRig {
         gl_FragColor = vec4(col, mask * 0.96 * min(1.0, uSpread * 2.4));
       }
     `,
-  });
+    });
 
-  const oilPuddle = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 5.4), oilPuddleMat);
-  oilPuddle.rotation.x = -Math.PI / 2;
-  oilPuddle.position.set(0, 0.023, -4.15);
-  oilPuddle.renderOrder = 1;
-  root.add(oilPuddle);
+    const oilPuddle = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 5.4), oilPuddleMat);
+    oilPuddle.rotation.x = -Math.PI / 2;
+    oilPuddle.position.set(0, 0.023, -4.15);
+    oilPuddle.renderOrder = 1;
+    root.add(oilPuddle);
 
-  return {
-    root,
-    frontPlateDrum: frontPlate.drum,
-    rearPlateDrum: rearPlate.drum,
-    frontRams,
-    rearRams,
-    bulletShieldGroup,
-    roofHatchPivot,
-    subParts,
-    plateAngle: 0,
-    ramFrontExtend: 0,
-    ramRearExtend: 0,
-    shieldExtend: 0,
-    hatchOpen: 0,
-    smokePoints,
-    smokeParticles,
-    oilInstanced,
-    oilDroplets,
-    oilPuddleMat,
-    oilSpread: 0,
-    time: 0,
-  };
-}
-
-const _dummyObj = new THREE.Object3D();
-
-/**
- * Smoothly updates all exterior Q-Branch mechanical assemblies, custom GLSL smoke particles,
- * arcing oil droplets, and the iridescent spreading ground oil slick.
- */
-export function updateQBranchGadgetsRig(
-  rig: QBranchGadgetsRig,
-  state: QBranchGadgetStates,
-  dt: number
-): void {
-  const safeDt = Math.min(dt, 0.05);
-  rig.time += safeDt;
-
-  // 1. Revolving 3-Way Number Plates
-  const targetPlateAngle = state.plateIndex * ((Math.PI * 2) / 3);
-  let diff = targetPlateAngle - rig.plateAngle;
-  while (diff < -Math.PI) diff += Math.PI * 2;
-  while (diff > Math.PI) diff -= Math.PI * 2;
-  rig.plateAngle += diff * Math.min(1, safeDt * 9);
-  rig.frontPlateDrum.rotation.x = rig.plateAngle;
-  rig.rearPlateDrum.rotation.x = rig.plateAngle;
-
-  // 2. Front & Rear Hydraulic Battering Rams
-  rig.ramFrontExtend += ((state.frontRam ? 1 : 0) - rig.ramFrontExtend) * Math.min(1, safeDt * 7);
-  rig.ramRearExtend += ((state.rearRam ? 1 : 0) - rig.ramRearExtend) * Math.min(1, safeDt * 7);
-  for (const r of rig.frontRams) r.position.z = rig.ramFrontExtend * 0.26;
-  for (const r of rig.rearRams) r.position.z = rig.ramRearExtend * 0.26;
-
-  // 3. Bullet-Resistant Rear Shield (rises vertically out of the recessed boot-deck slot)
-  rig.shieldExtend += ((state.bulletShield ? 1 : 0) - rig.shieldExtend) * Math.min(1, safeDt * 5.5);
-  rig.bulletShieldGroup.position.y = 0.672 + rig.shieldExtend * 0.326;
-
-  // 4. Passenger Ejector Seat Roof Hatch
-  rig.hatchOpen += ((state.roofHatch ? 1 : 0) - rig.hatchOpen) * Math.min(1, safeDt * 6.5);
-  rig.roofHatchPivot.rotation.z = -rig.hatchOpen * 1.15;
-  rig.roofHatchPivot.position.y = 1.325 + rig.hatchOpen * 0.035;
-
-  // 5A. Volumetric Smoke Screen Particle Simulation
-  const posAttr = rig.smokePoints.geometry.getAttribute('position') as THREE.BufferAttribute;
-  const ageAttr = rig.smokePoints.geometry.getAttribute('aAge') as THREE.BufferAttribute;
-  const sizeAttr = rig.smokePoints.geometry.getAttribute('aSize') as THREE.BufferAttribute;
-  const seedAttr = rig.smokePoints.geometry.getAttribute('aSeed') as THREE.BufferAttribute;
-  const rotAttr = rig.smokePoints.geometry.getAttribute('aRot') as THREE.BufferAttribute;
-
-  let smokeSpawnBudget = state.smokeScreen ? 8 : 0;
-  for (let i = 0; i < rig.smokeParticles.length; i++) {
-    const p = rig.smokeParticles[i];
-    if (!p.active && smokeSpawnBudget > 0) {
-      smokeSpawnBudget--;
-      p.active = true;
-      p.age = 0;
-      p.life = 2.6 + Math.random() * 1.6;
-      const side = i % 2 === 0 ? -0.43 : 0.43;
-      p.pos.set(side + (Math.random() - 0.5) * 0.06, 0.295, -2.31);
-      p.vel.set(
-        (Math.random() - 0.5) * 0.65 + (side > 0 ? 0.16 : -0.16),
-        0.16 + Math.random() * 0.30,
-        -(2.6 + Math.random() * 1.6)
-      );
-      p.baseSize = 0.85 + Math.random() * 0.7;
-      p.seed = Math.random() * 100;
-      p.rot = Math.random() * Math.PI * 2;
-    }
-
-    if (p.active) {
-      p.age += safeDt;
-      const t = p.age / p.life;
-      if (t >= 1) {
-        p.active = false;
-        posAttr.setXYZ(i, 0, -10, 0);
-        ageAttr.setX(i, 1);
-      } else {
-        // Strong aerodynamic drag + ground-hugging turbulent vortex wake
-        p.vel.z *= Math.pow(0.38, safeDt);
-        p.vel.x += Math.sin(rig.time * 2.8 + p.seed + p.pos.z * 1.4) * 0.75 * safeDt;
-        p.vel.y += (0.24 - p.vel.y) * 0.65 * safeDt;
-        p.pos.addScaledVector(p.vel, safeDt);
-        if (p.pos.y < 0.16) p.pos.y = 0.16;
-
-        posAttr.setXYZ(i, p.pos.x, p.pos.y, p.pos.z);
-        ageAttr.setX(i, t);
-        sizeAttr.setX(i, p.baseSize);
-        seedAttr.setX(i, p.seed);
-        rotAttr.setX(i, p.rot);
-      }
-    } else {
-      posAttr.setXYZ(i, 0, -10, 0);
-    }
+    return {
+      root,
+      frontPlateDrum: frontPlate.drum,
+      rearPlateDrum: rearPlate.drum,
+      frontRams,
+      rearRams,
+      bulletShieldGroup,
+      roofHatchPivot,
+      subParts,
+      plateAngle: 0,
+      ramFrontExtend: 0,
+      ramRearExtend: 0,
+      shieldExtend: 0,
+      hatchOpen: 0,
+      smokePoints,
+      smokeParticles,
+      oilInstanced,
+      oilDroplets,
+      oilPuddleMat,
+      oilSpread: 0,
+      time: 0,
+    };
   }
-  posAttr.needsUpdate = true;
-  ageAttr.needsUpdate = true;
-  sizeAttr.needsUpdate = true;
-  seedAttr.needsUpdate = true;
-  rotAttr.needsUpdate = true;
 
-  // 5B. Oil Slick Fluid Arc Stream + Spreading Iridescent Puddle
-  let oilSpawnBudget = state.oilSlick ? 5 : 0;
-  for (let i = 0; i < rig.oilDroplets.length; i++) {
-    const d = rig.oilDroplets[i];
-    if (!d.active && oilSpawnBudget > 0) {
-      oilSpawnBudget--;
-      d.active = true;
-      d.age = 0;
-      d.life = 0.55 + Math.random() * 0.28;
-      const side = i % 2 === 0 ? -0.19 : 0.19;
-      d.pos.set(side + (Math.random() - 0.5) * 0.03, 0.265, -2.26);
-      d.vel.set((Math.random() - 0.5) * 0.35, -0.15 + Math.random() * 0.22, -(2.4 + Math.random() * 1.1));
+  const _dummyObj = new THREE.Object3D();
+
+  /**
+   * Smoothly updates all exterior Q-Branch mechanical assemblies, custom GLSL smoke particles,
+   * arcing oil droplets, and the iridescent spreading ground oil slick.
+   */
+  export function updateQBranchGadgetsRig(
+    rig: QBranchGadgetsRig,
+    state: QBranchGadgetStates,
+    dt: number
+  ): void {
+    const safeDt = Math.min(dt, 0.05);
+    rig.time += safeDt;
+
+    // 1. Revolving 3-Way Number Plates
+    const targetPlateAngle = state.plateIndex * ((Math.PI * 2) / 3);
+    let diff = targetPlateAngle - rig.plateAngle;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    rig.plateAngle += diff * Math.min(1, safeDt * 9);
+    rig.frontPlateDrum.rotation.x = rig.plateAngle;
+    rig.rearPlateDrum.rotation.x = rig.plateAngle;
+
+    // 2. Front & Rear Hydraulic Battering Rams
+    rig.ramFrontExtend += ((state.frontRam ? 1 : 0) - rig.ramFrontExtend) * Math.min(1, safeDt * 7);
+    rig.ramRearExtend += ((state.rearRam ? 1 : 0) - rig.ramRearExtend) * Math.min(1, safeDt * 7);
+    for (const r of rig.frontRams) r.position.z = rig.ramFrontExtend * 0.26;
+    for (const r of rig.rearRams) r.position.z = rig.ramRearExtend * 0.26;
+
+    // 3. Bullet-Resistant Rear Shield (rises vertically from -0.326m stowed to 0m deployed)
+    rig.shieldExtend += ((state.bulletShield ? 1 : 0) - rig.shieldExtend) * Math.min(1, safeDt * 5.5);
+    rig.bulletShieldGroup.position.y = -0.326 + rig.shieldExtend * 0.326;
+
+    // 4. Passenger Ejector Seat Roof Hatch
+    rig.hatchOpen += ((state.roofHatch ? 1 : 0) - rig.hatchOpen) * Math.min(1, safeDt * 6.5);
+    rig.roofHatchPivot.rotation.z = -rig.hatchOpen * 1.15;
+    rig.roofHatchPivot.position.y = 1.325 + rig.hatchOpen * 0.035;
+
+    // 5A. Volumetric Smoke Screen Particle Simulation
+    const posAttr = rig.smokePoints.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const ageAttr = rig.smokePoints.geometry.getAttribute('aAge') as THREE.BufferAttribute;
+    const sizeAttr = rig.smokePoints.geometry.getAttribute('aSize') as THREE.BufferAttribute;
+    const seedAttr = rig.smokePoints.geometry.getAttribute('aSeed') as THREE.BufferAttribute;
+    const rotAttr = rig.smokePoints.geometry.getAttribute('aRot') as THREE.BufferAttribute;
+
+    let smokeSpawnBudget = state.smokeScreen ? 8 : 0;
+    for (let i = 0; i < rig.smokeParticles.length; i++) {
+      const p = rig.smokeParticles[i];
+      if (!p.active && smokeSpawnBudget > 0) {
+        smokeSpawnBudget--;
+        p.active = true;
+        p.age = 0;
+        p.life = 2.6 + Math.random() * 1.6;
+        const side = i % 2 === 0 ? -0.43 : 0.43;
+        p.pos.set(side + (Math.random() - 0.5) * 0.06, 0.295, -2.31);
+        p.vel.set(
+          (Math.random() - 0.5) * 0.65 + (side > 0 ? 0.16 : -0.16),
+          0.16 + Math.random() * 0.30,
+          -(2.6 + Math.random() * 1.6)
+        );
+        p.baseSize = 0.85 + Math.random() * 0.7;
+        p.seed = Math.random() * 100;
+        p.rot = Math.random() * Math.PI * 2;
+      }
+
+      if (p.active) {
+        p.age += safeDt;
+        const t = p.age / p.life;
+        if (t >= 1) {
+          p.active = false;
+          posAttr.setXYZ(i, 0, -10, 0);
+          ageAttr.setX(i, 1);
+        } else {
+          // Strong aerodynamic drag + ground-hugging turbulent vortex wake
+          p.vel.z *= Math.pow(0.38, safeDt);
+          p.vel.x += Math.sin(rig.time * 2.8 + p.seed + p.pos.z * 1.4) * 0.75 * safeDt;
+          p.vel.y += (0.24 - p.vel.y) * 0.65 * safeDt;
+          p.pos.addScaledVector(p.vel, safeDt);
+          if (p.pos.y < 0.16) p.pos.y = 0.16;
+
+          posAttr.setXYZ(i, p.pos.x, p.pos.y, p.pos.z);
+          ageAttr.setX(i, t);
+          sizeAttr.setX(i, p.baseSize);
+          seedAttr.setX(i, p.seed);
+          rotAttr.setX(i, p.rot);
+        }
+      } else {
+        posAttr.setXYZ(i, 0, -10, 0);
+      }
     }
+    posAttr.needsUpdate = true;
+    ageAttr.needsUpdate = true;
+    sizeAttr.needsUpdate = true;
+    seedAttr.needsUpdate = true;
+    rotAttr.needsUpdate = true;
 
-    if (d.active) {
-      d.age += safeDt;
-      d.vel.y -= 5.4 * safeDt;
-      d.pos.addScaledVector(d.vel, safeDt);
-      if (d.pos.y <= 0.025 || d.age >= d.life) {
-        d.active = false;
+    // 5B. Oil Slick Fluid Arc Stream + Spreading Iridescent Puddle
+    let oilSpawnBudget = state.oilSlick ? 5 : 0;
+    for (let i = 0; i < rig.oilDroplets.length; i++) {
+      const d = rig.oilDroplets[i];
+      if (!d.active && oilSpawnBudget > 0) {
+        oilSpawnBudget--;
+        d.active = true;
+        d.age = 0;
+        d.life = 0.55 + Math.random() * 0.28;
+        const side = i % 2 === 0 ? -0.19 : 0.19;
+        d.pos.set(side + (Math.random() - 0.5) * 0.03, 0.265, -2.26);
+        d.vel.set((Math.random() - 0.5) * 0.35, -0.15 + Math.random() * 0.22, -(2.4 + Math.random() * 1.1));
+      }
+
+      if (d.active) {
+        d.age += safeDt;
+        d.vel.y -= 5.4 * safeDt;
+        d.pos.addScaledVector(d.vel, safeDt);
+        if (d.pos.y <= 0.025 || d.age >= d.life) {
+          d.active = false;
+          _dummyObj.position.set(0, -10, 0);
+          _dummyObj.scale.setScalar(0.001);
+        } else {
+          _dummyObj.position.copy(d.pos);
+          _dummyObj.lookAt(d.pos.clone().add(d.vel));
+          _dummyObj.scale.set(0.85, 0.85, 3.6);
+        }
+      } else {
         _dummyObj.position.set(0, -10, 0);
         _dummyObj.scale.setScalar(0.001);
-      } else {
-        _dummyObj.position.copy(d.pos);
-        _dummyObj.lookAt(d.pos.clone().add(d.vel));
-        _dummyObj.scale.set(0.85, 0.85, 3.6);
       }
-    } else {
-      _dummyObj.position.set(0, -10, 0);
-      _dummyObj.scale.setScalar(0.001);
+      _dummyObj.updateMatrix();
+      rig.oilInstanced.setMatrixAt(i, _dummyObj.matrix);
     }
-    _dummyObj.updateMatrix();
-    rig.oilInstanced.setMatrixAt(i, _dummyObj.matrix);
-  }
-  rig.oilInstanced.instanceMatrix.needsUpdate = true;
+    rig.oilInstanced.instanceMatrix.needsUpdate = true;
 
-  rig.oilSpread += ((state.oilSlick ? 1 : 0) - rig.oilSpread) * Math.min(1, safeDt * (state.oilSlick ? 1.8 : 0.8));
-  rig.oilPuddleMat.uniforms.uSpread.value = rig.oilSpread;
-  rig.oilPuddleMat.uniforms.uTime.value = rig.time;
-}
+    rig.oilSpread += ((state.oilSlick ? 1 : 0) - rig.oilSpread) * Math.min(1, safeDt * (state.oilSlick ? 1.8 : 0.8));
+    rig.oilPuddleMat.uniforms.uSpread.value = rig.oilSpread;
+    rig.oilPuddleMat.uniforms.uTime.value = rig.time;
+  }
