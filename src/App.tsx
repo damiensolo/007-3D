@@ -75,9 +75,8 @@ export function App() {
     nonce: number;
   } | null>(null);
 
-  // Background soundtrack state (loops automatically)
+  // Background soundtrack state (off by default; user-controlled)
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const userPausedRef = useRef(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isMutedAudio, setIsMutedAudio] = useState(false);
   const [audioVolume, setAudioVolume] = useState(0.45);
@@ -89,50 +88,17 @@ export function App() {
     audio.muted = isMutedAudio;
   }, [audioVolume, isMutedAudio]);
 
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const tryPlay = () => {
-      if (userPausedRef.current) return;
-      audio
-        .play()
-        .then(() => {
-          setIsPlayingAudio(true);
-        })
-        .catch(() => {
-          // Browser blocked unmuted autoplay; wait for first user interaction
-        });
-    };
-
-    tryPlay();
-
-    const handleFirstInteraction = () => {
-      tryPlay();
-    };
-
-    window.addEventListener('pointerdown', handleFirstInteraction, { once: true });
-    window.addEventListener('keydown', handleFirstInteraction, { once: true });
-
-    return () => {
-      window.removeEventListener('pointerdown', handleFirstInteraction);
-      window.removeEventListener('keydown', handleFirstInteraction);
-    };
-  }, []);
-
   const togglePlayAudio = () => {
     const audio = audioRef.current;
     if (!audio) return;
     if (isPlayingAudio) {
-      userPausedRef.current = true;
       audio.pause();
       setIsPlayingAudio(false);
     } else {
-      userPausedRef.current = false;
       audio
         .play()
         .then(() => setIsPlayingAudio(true))
-        .catch(() => {});
+        .catch(() => { });
     }
   };
 
@@ -341,11 +307,10 @@ export function App() {
       >
         <button
           onClick={togglePlayAudio}
-          className={`flex items-center justify-center w-6 h-6 rounded-lg transition cursor-pointer ${
-            isPlayingAudio
+          className={`flex items-center justify-center w-6 h-6 rounded-lg transition cursor-pointer ${isPlayingAudio
               ? 'bg-amber-500 text-zinc-950'
               : 'bg-zinc-900 text-zinc-300 hover:text-white hover:bg-zinc-800'
-          }`}
+            }`}
           title={isPlayingAudio ? 'Pause soundtrack' : 'Play soundtrack'}
         >
           {isPlayingAudio ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 ml-0.5" />}
@@ -463,9 +428,8 @@ export function App() {
 
       {/* Left Sidebar */}
       <aside
-        className={`absolute top-4 left-4 bottom-4 z-20 w-80 flex flex-col rounded-2xl bg-zinc-950/82 border border-zinc-800/80 backdrop-blur-xl shadow-2xl transition-transform duration-300 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-[120%]'
-        }`}
+        className={`absolute top-4 left-4 bottom-4 z-20 w-80 flex flex-col rounded-2xl bg-zinc-950/82 border border-zinc-800/80 backdrop-blur-xl shadow-2xl transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-[120%]'
+          }`}
       >
         {/* Header */}
         <div className="p-4 border-b border-zinc-800/80 flex items-start justify-between gap-2">
@@ -533,11 +497,10 @@ export function App() {
                 <button
                   key={sub.id}
                   onClick={() => toggleSubsystem(sub.id)}
-                  className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition cursor-pointer ${
-                    active
+                  className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition cursor-pointer ${active
                       ? 'bg-zinc-900/90 text-zinc-100 border border-zinc-700/50'
                       : 'bg-transparent text-zinc-500 border border-transparent hover:bg-zinc-900/40'
-                  }`}
+                    }`}
                 >
                   <span className="flex items-center gap-2 truncate">
                     <span
@@ -571,11 +534,10 @@ export function App() {
             </span>
             <button
               onClick={() => setQBranchHighlight((v) => !v)}
-              className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border transition cursor-pointer ${
-                qBranchHighlight
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border transition cursor-pointer ${qBranchHighlight
                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
                   : 'bg-zinc-900 text-zinc-400 border-zinc-700/60 hover:text-zinc-200'
-              }`}
+                }`}
               title="Highlight 007 Q-Branch modified parts"
             >
               <Sparkles className="w-2.5 h-2.5" />
@@ -597,11 +559,10 @@ export function App() {
                   }}
                   onMouseEnter={() => setHoveredPartId(part.id)}
                   onMouseLeave={() => setHoveredPartId(null)}
-                  className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition cursor-pointer border ${
-                    isSelected
+                  className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition cursor-pointer border ${isSelected
                       ? 'bg-amber-500/15 border-amber-500/50 text-amber-100'
                       : 'bg-zinc-900/40 border-transparent hover:bg-zinc-900/80 text-zinc-300'
-                  } ${!isVisible ? 'opacity-45' : ''}`}
+                    } ${!isVisible ? 'opacity-45' : ''}`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex items-center gap-2 truncate font-medium">
@@ -695,11 +656,10 @@ export function App() {
                   prev === selectedPart.id ? null : selectedPart.id
                 )
               }
-              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border transition cursor-pointer ${
-                isolatedPartId === selectedPart.id
+              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border transition cursor-pointer ${isolatedPartId === selectedPart.id
                   ? 'bg-amber-500 text-zinc-950 border-amber-400'
                   : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border-zinc-700/70'
-              }`}
+                }`}
             >
               <Maximize2 className="w-3.5 h-3.5" />
               {isolatedPartId === selectedPart.id ? 'Exit Isolate' : 'Isolate Part'}
@@ -718,9 +678,8 @@ export function App() {
 
       {/* Bottom Floating Control Dock */}
       <div
-        className={`absolute bottom-4 z-20 left-1/2 -translate-x-1/2 flex flex-col gap-2.5 max-w-[calc(100vw-2rem)] ${
-          sidebarOpen ? 'lg:left-[calc(50%+10rem)]' : ''
-        }`}
+        className={`absolute bottom-4 z-20 left-1/2 -translate-x-1/2 flex flex-col gap-2.5 max-w-[calc(100vw-2rem)] ${sidebarOpen ? 'lg:left-[calc(50%+10rem)]' : ''
+          }`}
       >
         {/* Presets Row */}
         <div className="flex items-center justify-center flex-wrap gap-1.5 px-2 py-1.5 rounded-2xl bg-zinc-950/82 border border-zinc-800/80 backdrop-blur-xl shadow-2xl">
@@ -731,11 +690,10 @@ export function App() {
                 key={preset.id}
                 onClick={() => applyPreset(preset)}
                 title={preset.description}
-                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer ${
-                  active
+                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer ${active
                     ? 'bg-amber-500 text-zinc-950 shadow-sm'
                     : 'text-zinc-300 hover:text-white hover:bg-zinc-800/80'
-                }`}
+                  }`}
               >
                 {preset.label}
               </button>
@@ -811,11 +769,10 @@ export function App() {
                 }
               }}
               title="Toggle simulated Browning .30-caliber firing & muzzle flash"
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition cursor-pointer shrink-0 ${
-                isFiringGuns
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition cursor-pointer shrink-0 ${isFiringGuns
                   ? 'bg-orange-500 text-zinc-950 border-orange-400 shadow-sm shadow-orange-500/30'
                   : 'bg-zinc-900 text-orange-300 border-orange-500/30 hover:bg-orange-500/15'
-              }`}
+                }`}
             >
               <Flame className="w-3.5 h-3.5" />
               <span>{isFiringGuns ? 'Firing' : 'Fire'}</span>
@@ -826,11 +783,10 @@ export function App() {
           <div className="flex items-center flex-wrap gap-1.5 pt-1.5 border-t border-zinc-800/70">
             <button
               onClick={() => setQBranchState((prev) => ({ ...prev, gearCapOpen: !prev.gearCapOpen }))}
-              className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition cursor-pointer ${
-                qBranchState.gearCapOpen
+              className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition cursor-pointer ${qBranchState.gearCapOpen
                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
                   : 'bg-zinc-900 text-zinc-300 border-zinc-700/60 hover:bg-zinc-800'
-              }`}
+                }`}
               title="Flip open/close the gear-knob safety cap"
             >
               {qBranchState.gearCapOpen ? 'Cap Open' : 'Flip Cap'}
@@ -838,11 +794,10 @@ export function App() {
 
             <button
               onClick={triggerGearRedButton}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition cursor-pointer ${
-                isFiringGuns
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition cursor-pointer ${isFiringGuns
                   ? 'bg-red-600 text-white border-red-400 shadow-sm shadow-red-500/40'
                   : 'bg-red-950/60 text-red-300 border-red-500/40 hover:bg-red-900/60'
-              }`}
+                }`}
               title="Press red gear-knob actuator button to deploy & fire machine guns"
             >
               {qBranchState.gearCapOpen ? 'Red Trigger' : 'Arm Trigger'}
@@ -850,11 +805,10 @@ export function App() {
 
             <button
               onClick={() => setQBranchState((prev) => ({ ...prev, armrestOpen: !prev.armrestOpen }))}
-              className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition cursor-pointer ${
-                qBranchState.armrestOpen
+              className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition cursor-pointer ${qBranchState.armrestOpen
                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
                   : 'bg-zinc-900 text-zinc-300 border-zinc-700/60 hover:bg-zinc-800'
-              }`}
+                }`}
               title="Lift center armrest lid to reveal Q-Branch switchgear"
             >
               {qBranchState.armrestOpen ? 'Armrest Open' : 'Armrest'}
@@ -886,11 +840,10 @@ export function App() {
                 <button
                   key={key}
                   onClick={() => toggleGadget(key)}
-                  className={`px-2 py-0.5 rounded-md text-[10px] font-medium border transition cursor-pointer ${
-                    active
+                  className={`px-2 py-0.5 rounded-md text-[10px] font-medium border transition cursor-pointer ${active
                       ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
                       : 'bg-zinc-900/70 text-zinc-400 border-zinc-800 hover:text-zinc-200'
-                  }`}
+                    }`}
                 >
                   {label}
                 </button>
