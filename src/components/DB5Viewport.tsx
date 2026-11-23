@@ -1688,19 +1688,36 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
         updateQBranchGadgetsRig(gadgetsRigRef.current, qBranchStateRef.current, dt);
       }
 
-      // Smoothly lerp explode factor
+      // Smoothly lerp explode factor and snap cleanly to 0 when within epsilon
       const targetExplode = explodeRef.current;
       currentExplode += (targetExplode - currentExplode) * 0.12;
+      if (Math.abs(targetExplode - currentExplode) < 0.0005) {
+        currentExplode = targetExplode;
+      }
 
       for (const part of partsRef.current) {
-        // When assembled, animated Q-Branch rigs control their own sub-part transforms
-        if (
-          (part.subsystem === 'qbranch_weapons' ||
-            part.subsystem === 'qbranch_cockpit' ||
-            part.subsystem === 'qbranch_gadgets') &&
-          targetExplode < 0.01 &&
-          currentExplode < 0.01
-        ) {
+        if (currentExplode === 0) {
+          // Ensure non-animated GLB and procedural sub-parts snap back to their exact 0.0000mm basePosition
+          // while letting animated Q-Branch rigs (guns, cabin switches, gadgets) own their dynamic transforms
+          if (
+            part.subsystem !== 'qbranch_weapons' &&
+            part.subsystem !== 'qbranch_cockpit' &&
+            part.subsystem !== 'qbranch_gadgets'
+          ) {
+            part.mesh.position.copy(part.basePosition);
+          } else if (
+            !part.mesh.parent ||
+            part.mesh.parent.type === 'Group'
+          ) {
+            // Animated groups (roofHatchGroup, passengerSeatGroup, leftOilLampPivot) move the parent Group,
+            // while their child meshes sit at basePosition (0,0,0) when currentExplode === 0
+            if (
+              part.mesh.name !== 'Left Taillight Oil Slick Nozzle' &&
+              !part.label.includes('Oil Slick Nozzle')
+            ) {
+              part.mesh.position.copy(part.basePosition);
+            }
+          }
           continue;
         }
         part.mesh.position
