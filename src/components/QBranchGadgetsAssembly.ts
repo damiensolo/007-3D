@@ -1423,6 +1423,13 @@ export function createQBranchGadgetsRig(
   });
 
   const oilBlobInstanced = new THREE.InstancedMesh(blobGeo, oilBlobMat, OIL_COUNT);
+  for (let i = 0; i < OIL_COUNT; i++) {
+    _dummyObj.position.set(0, -10, 0);
+    _dummyObj.scale.setScalar(0.0001);
+    _dummyObj.updateMatrix();
+    oilBlobInstanced.setMatrixAt(i, _dummyObj.matrix);
+  }
+  oilBlobInstanced.instanceMatrix.needsUpdate = true;
   oilBlobInstanced.frustumCulled = false;
   oilBlobInstanced.renderOrder = 2;
   root.add(oilBlobInstanced);
@@ -1667,6 +1674,13 @@ export function createQBranchGadgetsRig(
     roughness: 0.28,
   });
   const caltropInstanced = new THREE.InstancedMesh(caltropGeo, caltropMat, CALTROP_COUNT);
+  for (let i = 0; i < CALTROP_COUNT; i++) {
+    _dummyObj.position.set(0, -10, 0);
+    _dummyObj.scale.setScalar(0.001);
+    _dummyObj.updateMatrix();
+    caltropInstanced.setMatrixAt(i, _dummyObj.matrix);
+  }
+  caltropInstanced.instanceMatrix.needsUpdate = true;
   caltropInstanced.frustumCulled = false;
   root.add(caltropInstanced);
 
@@ -1720,6 +1734,7 @@ export function createQBranchGadgetsRig(
 }
 
 const _dummyObj = new THREE.Object3D();
+const _lookTarget = new THREE.Vector3();
 
 /**
  * Smoothly updates all exterior Q-Branch mechanical assemblies, custom GLSL smoke particles,
@@ -1826,6 +1841,7 @@ export function updateQBranchGadgetsRig(
   const airPosAttr = rig.ejectAirPoints.geometry.getAttribute('position') as THREE.BufferAttribute;
   const airAgeAttr = rig.ejectAirPoints.geometry.getAttribute('aAge') as THREE.BufferAttribute;
   const airSizeAttr = rig.ejectAirPoints.geometry.getAttribute('aSize') as THREE.BufferAttribute;
+  let airDirty = false;
   for (let i = 0; i < rig.ejectAirParticles.length; i++) {
     const ap = rig.ejectAirParticles[i];
     if (!ap.active && airBurstBudget > 0) {
@@ -1847,6 +1863,7 @@ export function updateQBranchGadgetsRig(
       ap.baseSize = 0.20 + Math.random() * 0.14;
     }
     if (ap.active) {
+      airDirty = true;
       ap.age += safeDt;
       const t = ap.age / ap.life;
       if (t >= 1) {
@@ -1860,13 +1877,13 @@ export function updateQBranchGadgetsRig(
         airAgeAttr.setX(i, t);
         airSizeAttr.setX(i, ap.baseSize);
       }
-    } else {
-      airPosAttr.setXYZ(i, 0, -10, 0);
     }
   }
-  airPosAttr.needsUpdate = true;
-  airAgeAttr.needsUpdate = true;
-  airSizeAttr.needsUpdate = true;
+  if (airDirty) {
+    airPosAttr.needsUpdate = true;
+    airAgeAttr.needsUpdate = true;
+    airSizeAttr.needsUpdate = true;
+  }
 
   // 5A. Volumetric Smoke Screen Particle Simulation
   const posAttr = rig.smokePoints.geometry.getAttribute('position') as THREE.BufferAttribute;
@@ -1876,6 +1893,7 @@ export function updateQBranchGadgetsRig(
   const rotAttr = rig.smokePoints.geometry.getAttribute('aRot') as THREE.BufferAttribute;
 
   let smokeSpawnBudget = state.smokeScreen ? 8 : 0;
+  let smokeDirty = false;
   for (let i = 0; i < rig.smokeParticles.length; i++) {
     const p = rig.smokeParticles[i];
     if (!p.active && smokeSpawnBudget > 0) {
@@ -1896,6 +1914,7 @@ export function updateQBranchGadgetsRig(
     }
 
     if (p.active) {
+      smokeDirty = true;
       p.age += safeDt;
       const t = p.age / p.life;
       if (t >= 1) {
@@ -1916,15 +1935,15 @@ export function updateQBranchGadgetsRig(
         seedAttr.setX(i, p.seed);
         rotAttr.setX(i, p.rot);
       }
-    } else {
-      posAttr.setXYZ(i, 0, -10, 0);
     }
   }
-  posAttr.needsUpdate = true;
-  ageAttr.needsUpdate = true;
-  sizeAttr.needsUpdate = true;
-  seedAttr.needsUpdate = true;
-  rotAttr.needsUpdate = true;
+  if (smokeDirty) {
+    posAttr.needsUpdate = true;
+    ageAttr.needsUpdate = true;
+    sizeAttr.needsUpdate = true;
+    seedAttr.needsUpdate = true;
+    rotAttr.needsUpdate = true;
+  }
 
   // 5B. Left Taillight Hinge & Nozzle-Anchored Viscous Filament -> Deformed Droplets -> Metaball Puddle
   rig.oilLidOpen += ((state.oilSlick ? 1 : 0) - rig.oilLidOpen) * Math.min(1, safeDt * 7.5);
@@ -1975,9 +1994,11 @@ export function updateQBranchGadgetsRig(
 
   rig.oilImpact.z += safeDt;
 
+  let oilDirty = false;
   for (let i = 0; i < rig.oilDroplets.length; i++) {
     const d = rig.oilDroplets[i];
     if (d.active) {
+      oilDirty = true;
       d.age += safeDt;
       d.vel.y -= 3.8 * safeDt;
       d.pos.addScaledVector(d.vel, safeDt);
@@ -2011,21 +2032,21 @@ export function updateQBranchGadgetsRig(
         _dummyObj.scale.setScalar(0.0001);
       } else {
         _dummyObj.position.copy(d.pos);
-        _dummyObj.lookAt(d.pos.clone().add(d.vel));
+        _lookTarget.copy(d.pos).add(d.vel);
+        _dummyObj.lookAt(_lookTarget);
         // High-viscosity liquid columns stretch smoothly along their parabolic trajectory and swell near impact
         const flightProgress = THREE.MathUtils.clamp(d.age / 0.65, 0, 1);
         const rDynamic = d.radius * THREE.MathUtils.lerp(0.95, 1.18, flightProgress);
         const lenDynamic = d.radius * d.elongation * THREE.MathUtils.lerp(1.15, 0.78, flightProgress);
         _dummyObj.scale.set(rDynamic, rDynamic, lenDynamic);
       }
-    } else {
-      _dummyObj.position.set(0, -10, 0);
-      _dummyObj.scale.setScalar(0.0001);
+      _dummyObj.updateMatrix();
+      rig.oilBlobInstanced.setMatrixAt(i, _dummyObj.matrix);
     }
-    _dummyObj.updateMatrix();
-    rig.oilBlobInstanced.setMatrixAt(i, _dummyObj.matrix);
   }
-  rig.oilBlobInstanced.instanceMatrix.needsUpdate = true;
+  if (oilDirty) {
+    rig.oilBlobInstanced.instanceMatrix.needsUpdate = true;
+  }
 
   // Slowly creeping high-viscosity damped metaballs on the ground
   const ballUniforms = rig.oilPuddleMat.uniforms.uBalls.value as THREE.Vector4[];
@@ -2056,6 +2077,7 @@ export function updateQBranchGadgetsRig(
   rig.rightCaltropPivot.rotation.x = -rig.caltropLidOpen * 1.65; // Flips entire right cluster ~95° down
 
   let caltropSpawnBudget = state.caltrops && rig.caltropLidOpen > 0.65 ? 2 : 0;
+  let caltropDirty = false;
   for (let i = 0; i < rig.caltrops.length; i++) {
     const c = rig.caltrops[i];
     if (!c.active && caltropSpawnBudget > 0) {
@@ -2075,6 +2097,7 @@ export function updateQBranchGadgetsRig(
     }
 
     if (c.active) {
+      caltropDirty = true;
       c.age += safeDt;
       if (c.age >= c.life && !state.caltrops) {
         c.active = false;
@@ -2105,12 +2128,11 @@ export function updateQBranchGadgetsRig(
         _dummyObj.position.set(0, -10, 0);
         _dummyObj.scale.setScalar(0.001);
       }
-    } else {
-      _dummyObj.position.set(0, -10, 0);
-      _dummyObj.scale.setScalar(0.001);
+      _dummyObj.updateMatrix();
+      rig.caltropInstanced.setMatrixAt(i, _dummyObj.matrix);
     }
-    _dummyObj.updateMatrix();
-    rig.caltropInstanced.setMatrixAt(i, _dummyObj.matrix);
   }
-  rig.caltropInstanced.instanceMatrix.needsUpdate = true;
+  if (caltropDirty) {
+    rig.caltropInstanced.instanceMatrix.needsUpdate = true;
+  }
 }

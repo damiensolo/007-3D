@@ -37,6 +37,7 @@ import {
 export function App() {
   const [parts, setParts] = useState<DB5Part[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadProgress, setLoadProgress] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [explode, setExplode] = useState(0);
@@ -110,6 +111,10 @@ export function App() {
       return;
     }
     setParts(loadedParts);
+  }, []);
+
+  const handleLoadProgress = useCallback((pct: number) => {
+    setLoadProgress(pct);
   }, []);
 
   const handleHoverPart = useCallback(
@@ -296,7 +301,7 @@ export function App() {
         ref={audioRef}
         src="/audio/soundtrack.mp3"
         loop
-        preload="auto"
+        preload="none"
         onPlay={() => setIsPlayingAudio(true)}
         onPause={() => setIsPlayingAudio(false)}
       />
@@ -362,6 +367,7 @@ export function App() {
         qBranchHighlight={qBranchHighlight}
         cameraTargetRequest={cameraTargetRequest}
         onPartsLoaded={handlePartsLoaded}
+        onLoadProgress={handleLoadProgress}
         onSelectPart={handleSelectPart}
         onHoverPart={handleHoverPart}
         onCabinAction={handleCabinAction}
@@ -374,7 +380,17 @@ export function App() {
           <p className="text-sm font-medium tracking-widest uppercase text-zinc-300">
             Loading 1964 Aston Martin DB5 Vantage
           </p>
-          <p className="text-xs text-zinc-500 mt-1">Parsing 84 meshes &amp; studio PBR textures…</p>
+          <p className="text-xs text-zinc-400 mt-1">
+            {loadProgress > 0 && loadProgress < 100
+              ? `Streaming 3D Coachwork & Q-Branch Systems… ${loadProgress}%`
+              : 'Initializing Q-Branch assemblies & studio PBR shaders…'}
+          </p>
+          <div className="w-56 h-1.5 bg-zinc-800/90 rounded-full overflow-hidden mt-3 border border-zinc-700/50">
+            <div
+              className="h-full bg-amber-400 transition-all duration-150 ease-out"
+              style={{ width: `${Math.max(8, loadProgress)}%` }}
+            />
+          </div>
         </div>
       )}
 
