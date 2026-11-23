@@ -991,21 +991,23 @@ export function createQBranchGadgetsRig(
         attribute float aSeed;
         varying vec3 vNormal;
         varying vec3 vViewDir;
-        varying float vRadial;
+        varying float vAxial;
         uniform float uTime;
         void main() {
           // Smooth high-viscosity liquid packet modulation along flow axis
           vec3 p = position;
           float wave = 1.0
-            + 0.14 * sin(p.z * 2.6 + aSeed - uTime * 6.5)
-            + 0.08 * cos(p.y * 3.0 + aSeed * 0.7 + uTime * 4.8);
-          float taper = 1.0 - 0.14 * p.z * p.z;
+            + 0.12 * sin(p.z * 2.4 + aSeed - uTime * 6.0)
+            + 0.06 * cos(p.y * 2.8 + aSeed * 0.7 + uTime * 4.5);
+          float taper = 1.0 - 0.12 * p.z * p.z;
           p.xy *= wave * taper;
-          vRadial = length(p.xy);
+          vAxial = abs(p.z);
 
           mat4 m = modelMatrix * instanceMatrix;
           vec4 wp = m * vec4(p, 1.0);
-          vNormal = normalize(mat3(m) * normalize(normal + vec3(0.08 * sin(p.z * 2.6 + aSeed), 0.08 * cos(p.z * 2.6), 0.0)));
+          // Compute true cylindrical normal perpendicular to the stream axis so overlapping packets blend seamlessly without orange end-cap stripes
+          vec3 cylNormal = normalize(vec3(normal.xy, normal.z * 0.14));
+          vNormal = normalize(mat3(m) * normalize(cylNormal + vec3(0.06 * sin(p.z * 2.4 + aSeed), 0.06 * cos(p.z * 2.4), 0.0)));
           vViewDir = normalize(cameraPosition - wp.xyz);
           gl_Position = projectionMatrix * viewMatrix * wp;
         }
@@ -1013,30 +1015,30 @@ export function createQBranchGadgetsRig(
       fragmentShader: `
         varying vec3 vNormal;
         varying vec3 vViewDir;
-        varying float vRadial;
+        varying float vAxial;
         void main() {
           vec3 N = normalize(vNormal);
           vec3 V = normalize(vViewDir);
           float ndotv = clamp(dot(N, V), 0.0, 1.0);
 
-          // Beer-Lambert depth absorption: thin edges glow rich amber/golden-brown, thick core -> deep black-brown
-          float opticalDepth = mix(0.22, 2.35, pow(ndotv, 0.80));
-          vec3 absorption = exp(-vec3(2.2, 5.0, 11.2) * opticalDepth);
-          vec3 amberGlow = vec3(0.76, 0.36, 0.06) * absorption;
-          vec3 coreOil = mix(vec3(0.015, 0.009, 0.004), amberGlow, 0.86);
+          // Subtle, dark natural motor-oil coloration (deep espresso-black core with muted dark-brown edges, never glowing orange)
+          float opticalDepth = mix(0.65, 2.8, pow(ndotv, 0.65));
+          vec3 absorption = exp(-vec3(3.2, 5.2, 9.5) * opticalDepth);
+          vec3 subtleBrown = vec3(0.22, 0.12, 0.04) * absorption;
+          vec3 coreOil = mix(vec3(0.010, 0.008, 0.006), subtleBrown, 0.45 * (1.0 - 0.6 * vAxial));
 
-          // Warm amber-tinted studio reflection (no blown-out white hot-spots or harsh white Fresnel rings)
+          // Neutral dark-studio dielectric reflection (muted warm-slate sheen, zero orange/white hotspots)
           float F0 = 0.0362;
-          float fresnel = F0 + (0.28 - F0) * pow(1.0 - ndotv, 4.0);
+          float fresnel = F0 + (0.18 - F0) * pow(1.0 - ndotv, 4.0);
           vec3 L1 = normalize(vec3(0.35, 0.90, 0.25));
-          float spec1 = pow(max(dot(N, normalize(L1 + V)), 0.0), 28.0);
+          float spec1 = pow(max(dot(N, normalize(L1 + V)), 0.0), 32.0);
           vec3 L2 = normalize(vec3(-0.4, 0.75, -0.45));
-          float spec2 = pow(max(dot(N, normalize(L2 + V)), 0.0), 16.0);
+          float spec2 = pow(max(dot(N, normalize(L2 + V)), 0.0), 18.0);
 
-          vec3 warmSheen = vec3(0.42, 0.24, 0.08) * fresnel;
-          vec3 warmHighlight = vec3(0.62, 0.38, 0.14) * (spec1 * 0.22 + spec2 * 0.12);
-          vec3 col = clamp(coreOil + warmSheen + warmHighlight, 0.0, 0.72);
-          float alpha = mix(0.90, 0.99, smoothstep(0.08, 0.45, ndotv));
+          vec3 studioSheen = vec3(0.16, 0.15, 0.14) * fresnel;
+          vec3 studioHighlight = vec3(0.24, 0.21, 0.17) * (spec1 * 0.20 + spec2 * 0.10);
+          vec3 col = clamp(coreOil + studioSheen + studioHighlight, 0.0, 0.28);
+          float alpha = mix(0.94, 1.0, smoothstep(0.06, 0.40, ndotv));
           gl_FragColor = vec4(col, alpha);
         }
       `,
@@ -1115,20 +1117,20 @@ export function createQBranchGadgetsRig(
           vec3 N = normalize(vNormal);
           vec3 V = normalize(vViewDir);
           float ndotv = clamp(dot(N, V), 0.0, 1.0);
-          // Rich high-viscosity motor oil glow via Beer-Lambert absorption (warm amber sheen, no white blowouts)
-          float opticalDepth = mix(0.22, 2.15, pow(ndotv, 0.82)) * mix(1.05, 0.65, vUv.x);
-          vec3 absorption = exp(-vec3(2.2, 5.0, 11.2) * opticalDepth);
-          vec3 col = mix(vec3(0.015, 0.009, 0.004), vec3(0.76, 0.36, 0.06) * absorption, 0.86);
+          // Natural dark high-viscosity motor oil (matches connected stream packets seamlessly, no glowing orange)
+          float opticalDepth = mix(0.65, 2.75, pow(ndotv, 0.65)) * mix(1.05, 0.75, vUv.x);
+          vec3 absorption = exp(-vec3(3.2, 5.2, 9.5) * opticalDepth);
+          vec3 col = mix(vec3(0.010, 0.008, 0.006), vec3(0.22, 0.12, 0.04) * absorption, 0.45);
           float F0 = 0.0362;
-          float fresnel = F0 + (0.28 - F0) * pow(1.0 - ndotv, 4.0);
+          float fresnel = F0 + (0.18 - F0) * pow(1.0 - ndotv, 4.0);
           vec3 L1 = normalize(vec3(0.35, 0.90, 0.25));
-          float spec1 = pow(max(dot(N, normalize(L1 + V)), 0.0), 28.0);
+          float spec1 = pow(max(dot(N, normalize(L1 + V)), 0.0), 32.0);
           vec3 L2 = normalize(vec3(-0.4, 0.75, -0.45));
-          float spec2 = pow(max(dot(N, normalize(L2 + V)), 0.0), 16.0);
-          col += vec3(0.42, 0.24, 0.08) * fresnel + vec3(0.62, 0.38, 0.14) * (spec1 * 0.22 + spec2 * 0.12);
-          col = clamp(col, 0.0, 0.72);
+          float spec2 = pow(max(dot(N, normalize(L2 + V)), 0.0), 18.0);
+          col += vec3(0.16, 0.15, 0.14) * fresnel + vec3(0.24, 0.21, 0.17) * (spec1 * 0.20 + spec2 * 0.10);
+          col = clamp(col, 0.0, 0.28);
           float tipFade = 1.0 - smoothstep(uLength - 0.15, uLength, vUv.x);
-          gl_FragColor = vec4(col, uActive * mix(0.92, 0.99, tipFade));
+          gl_FragColor = vec4(col, uActive * mix(0.94, 1.0, tipFade));
         }
       `,
     });
@@ -1235,24 +1237,24 @@ export function createQBranchGadgetsRig(
         vec3 V = normalize(cameraPosition - vWorldPos);
         float ndotv = clamp(dot(N, V), 0.0, 1.0);
 
-        // Beer-Lambert depth absorption: thin meniscus edge glows amber/golden-brown, center -> near-black
-        float depth = excess * 1.2;
-        vec3 absorb = exp(-vec3(2.3, 5.2, 11.6) * depth);
-        vec3 thinAmber = vec3(0.64, 0.29, 0.05) * absorb;
-        vec3 deepCenter = vec3(0.010, 0.007, 0.004);
-        vec3 oilBody = mix(deepCenter, thinAmber, exp(-depth * 2.2));
+        // Subtle Beer-Lambert depth absorption: thin meniscus edge is muted dark warm-brown, center -> deep near-black
+        float depth = excess * 1.35;
+        vec3 absorb = exp(-vec3(3.0, 5.2, 9.8) * depth);
+        vec3 thinAmber = vec3(0.24, 0.13, 0.04) * absorb;
+        vec3 deepCenter = vec3(0.009, 0.007, 0.005);
+        vec3 oilBody = mix(deepCenter, thinAmber, exp(-depth * 2.8) * 0.55);
 
-        // Warm dark-studio sheen & subtle amber meniscus reflection (no blown-out white spot reflections)
+        // Subtle dark-studio sheen & muted meniscus highlight (no glowing orange rim or white spot reflection)
         float F0 = 0.0362;
-        float fresnel = F0 + (0.24 - F0) * pow(1.0 - ndotv, 4.0);
+        float fresnel = F0 + (0.16 - F0) * pow(1.0 - ndotv, 4.0);
         vec3 L1 = normalize(vec3(0.22, 0.92, 0.32));
         float spec1 = pow(max(dot(N, normalize(L1 + V)), 0.0), 36.0);
         vec3 L2 = normalize(vec3(-0.35, 0.82, -0.44));
         float spec2 = pow(max(dot(N, normalize(L2 + V)), 0.0), 22.0);
 
-        vec3 warmEnv = vec3(0.36, 0.21, 0.07) * fresnel;
-        vec3 warmSpec = vec3(0.54, 0.32, 0.11) * (spec1 * 0.24 + spec2 * 0.12);
-        vec3 col = clamp(oilBody + warmEnv + warmSpec, 0.0, 0.65);
+        vec3 warmEnv = vec3(0.15, 0.14, 0.13) * fresnel;
+        vec3 warmSpec = vec3(0.25, 0.21, 0.16) * (spec1 * 0.22 + spec2 * 0.10);
+        vec3 col = clamp(oilBody + warmEnv + warmSpec, 0.0, 0.28);
 
         gl_FragColor = vec4(col, 0.97);
       }
