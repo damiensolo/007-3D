@@ -24,8 +24,18 @@ interface OilDroplet {
   active: boolean;
   age: number;
   life: number;
+  radius: number;
   pos: THREE.Vector3;
   vel: THREE.Vector3;
+}
+
+interface OilMetaball {
+  active: boolean;
+  x: number;
+  z: number;
+  vx: number;
+  vz: number;
+  r: number;
 }
 
 export interface TailLightSplitData {
@@ -56,6 +66,7 @@ export interface QBranchGadgetsRig {
   roofHatchPivot: THREE.Group;
   leftOilLampPivot: THREE.Group;
   leftOilNozzle: THREE.Mesh;
+  leftOilArms: THREE.Mesh[];
   rightCaltropPivot: THREE.Group;
   subParts: GadgetSubPart[];
   plateAngle: number;
@@ -67,12 +78,15 @@ export interface QBranchGadgetsRig {
   caltropLidOpen: number;
   smokePoints: THREE.Points;
   smokeParticles: SmokeParticle[];
-  oilJetMat: THREE.ShaderMaterial;
-  oilStreamProg: number;
-  oilMistPoints: THREE.Points;
+  oilBlobInstanced: THREE.InstancedMesh;
+  oilBlobMat: THREE.ShaderMaterial;
+  oilFilamentMesh: THREE.Mesh;
+  oilFilamentMat: THREE.ShaderMaterial;
   oilDroplets: OilDroplet[];
+  oilMetaballs: OilMetaball[];
   oilPuddleMat: THREE.ShaderMaterial;
-  oilSpread: number;
+  oilImpact: THREE.Vector3;
+  oilSpawnAccum: number;
   caltropInstanced: THREE.InstancedMesh;
   caltrops: CaltropItem[];
   time: number;
@@ -256,454 +270,457 @@ function buildTetraCaltropGeometry(radius = 0.022): THREE.BufferGeometry {
   return geo;
 }
 
-  export function createQBranchGadgetsRig(
-    trunkShieldProfile?: Array<{ x: number; y: number }>,
-    tailLightSplits?: TailLightSplitData
-  ): QBranchGadgetsRig {
-    const root = new THREE.Group();
-    root.name = 'QBranch_ExteriorGadgets';
+export function createQBranchGadgetsRig(
+  trunkShieldProfile?: Array<{ x: number; y: number }>,
+  tailLightSplits?: TailLightSplitData
+): QBranchGadgetsRig {
+  const root = new THREE.Group();
+  root.name = 'QBranch_ExteriorGadgets';
 
-    const chromeMat = new THREE.MeshStandardMaterial({
-      color: 0xe2e8f0,
-      metalness: 0.96,
-      roughness: 0.08,
-    });
-    const gunmetalMat = new THREE.MeshStandardMaterial({
-      color: 0x262a33,
-      metalness: 0.84,
-      roughness: 0.34,
-    });
-    const brassMat = new THREE.MeshStandardMaterial({
-      color: 0xd4a038,
-      metalness: 0.88,
-      roughness: 0.22,
-    });
-    const rubberPadMat = new THREE.MeshStandardMaterial({
-      color: 0x111317,
-      metalness: 0.05,
-      roughness: 0.82,
-    });
-    const silverBirchMat = new THREE.MeshPhysicalMaterial({
-      color: 0xaab4be,
-      metalness: 0.82,
-      roughness: 0.2,
-      clearcoat: 1.0,
-      clearcoatRoughness: 0.05,
-      envMapIntensity: 1.25,
-    });
+  const chromeMat = new THREE.MeshStandardMaterial({
+    color: 0xe2e8f0,
+    metalness: 0.96,
+    roughness: 0.08,
+  });
+  const gunmetalMat = new THREE.MeshStandardMaterial({
+    color: 0x262a33,
+    metalness: 0.84,
+    roughness: 0.34,
+  });
+  const brassMat = new THREE.MeshStandardMaterial({
+    color: 0xd4a038,
+    metalness: 0.88,
+    roughness: 0.22,
+  });
+  const rubberPadMat = new THREE.MeshStandardMaterial({
+    color: 0x111317,
+    metalness: 0.05,
+    roughness: 0.82,
+  });
+  const silverBirchMat = new THREE.MeshPhysicalMaterial({
+    color: 0xaab4be,
+    metalness: 0.82,
+    roughness: 0.2,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.05,
+    envMapIntensity: 1.25,
+  });
 
-    const subParts: GadgetSubPart[] = [];
-    const register = (
-      mesh: THREE.Mesh,
-      label: string,
-      materialLabel: string,
-      qBranchNote: string,
-      semanticDir: [number, number, number]
-    ) => {
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      subParts.push({ mesh, label, materialLabel, qBranchNote, semanticDir });
-      return mesh;
-    };
+  const subParts: GadgetSubPart[] = [];
+  const register = (
+    mesh: THREE.Mesh,
+    label: string,
+    materialLabel: string,
+    qBranchNote: string,
+    semanticDir: [number, number, number]
+  ) => {
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    subParts.push({ mesh, label, materialLabel, qBranchNote, semanticDir });
+    return mesh;
+  };
 
-    // =========================================================================
-    // 1. REVOLVING 3-WAY NUMBER PLATES (Front Valance & Rear Boot)
-    // =========================================================================
-    const plateMats = ([0, 1, 2] as const).map(
-      (v) =>
-        new THREE.MeshStandardMaterial({
-          map: createPlateTexture(v),
-          roughness: 0.26,
-          metalness: 0.22,
-        })
-    );
-
-    const buildPlateAssembly = (isFront: boolean): { group: THREE.Group; drum: THREE.Group } => {
-      const group = new THREE.Group();
-      const plateW = 0.36;
-      const plateH = 0.082;
-      const bezelThick = 0.012;
-
-      // Chamfered chrome surround bezel with rectangular window
-      const outer = new THREE.Shape();
-      outer.moveTo(-plateW / 2 - bezelThick, -plateH / 2 - bezelThick);
-      outer.lineTo(plateW / 2 + bezelThick, -plateH / 2 - bezelThick);
-      outer.lineTo(plateW / 2 + bezelThick, plateH / 2 + bezelThick);
-      outer.lineTo(-plateW / 2 - bezelThick, plateH / 2 + bezelThick);
-      outer.closePath();
-
-      const hole = new THREE.Path();
-      hole.moveTo(-plateW / 2, -plateH / 2);
-      hole.lineTo(plateW / 2, -plateH / 2);
-      hole.lineTo(plateW / 2, plateH / 2);
-      hole.lineTo(-plateW / 2, plateH / 2);
-      hole.closePath();
-      outer.holes.push(hole);
-
-      const bezelGeo = new THREE.ExtrudeGeometry(outer, {
-        depth: 0.014,
-        bevelEnabled: true,
-        bevelThickness: 0.003,
-        bevelSize: 0.003,
-        bevelSegments: 2,
-      });
-      const bezel = register(
-        new THREE.Mesh(bezelGeo, chromeMat),
-        isFront ? 'Front Revolving Plate Bezel' : 'Rear Revolving Plate Bezel',
-        'Chrome-Plated Brass Frame',
-        'Concealed motorized frame housing the 3-sided rotating identity plates.',
-        isFront ? [0, -0.1, 1.3] : [0, 0.1, -1.3]
-      );
-      bezel.position.z = -0.008;
-      group.add(bezel);
-
-      // Triangular prism drum rotating around X-axis
-      const drum = new THREE.Group();
-      group.add(drum);
-
-      const apothem = 0.023;
-      const core = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, plateW - 0.01, 3), gunmetalMat);
-      core.rotation.z = Math.PI / 2;
-      drum.add(core);
-
-      const plateFaceGeo = new THREE.BoxGeometry(plateW - 0.006, plateH - 0.004, 0.004);
-      for (let i = 0; i < 3; i++) {
-        const angle = i * ((Math.PI * 2) / 3);
-        const facePivot = new THREE.Group();
-        facePivot.rotation.x = -angle;
-        const faceMesh = register(
-          new THREE.Mesh(plateFaceGeo, plateMats[i]),
-          `${isFront ? 'Front' : 'Rear'} Number Plate (${['BMT 216A', '4711-EA-62', 'LU 6789'][i]})`,
-          'Pressed Aluminum Plate',
-          '3-way Q-Branch identity plate synced to the brass E-gate selector in the center armrest.',
-          isFront ? [0, -0.08, 1.35] : [0, 0.08, -1.35]
-        );
-        faceMesh.position.z = apothem;
-        facePivot.add(faceMesh);
-        drum.add(facePivot);
-      }
-
-      return { group, drum };
-    };
-
-    const frontPlate = buildPlateAssembly(true);
-    frontPlate.group.position.set(0, 0.342, 2.258);
-    root.add(frontPlate.group);
-
-    const rearPlate = buildPlateAssembly(false);
-    rearPlate.group.position.set(0, 0.635, -2.194);
-    rearPlate.group.rotation.y = Math.PI;
-    rearPlate.group.rotation.x = 0.12; // Matches DB5 rear boot slope
-    root.add(rearPlate.group);
-
-    // =========================================================================
-    // 2. FRONT & REAR HYDRAULIC BATTERING RAMS
-    // =========================================================================
-    const buildRamUnit = (x: number, y: number, z: number, isFront: boolean): THREE.Group => {
-      const unit = new THREE.Group();
-      unit.position.set(x, y, z);
-      if (!isFront) unit.rotation.y = Math.PI;
-      root.add(unit);
-
-      // Fixed outer hydraulic sleeve + brass gland nut
-      const sleeve = register(
-        new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.14, 18), gunmetalMat),
-        `${isFront ? 'Front' : 'Rear'} Ram Hydraulic Cylinder`,
-        'High-Pressure Steel Sleeve',
-        'Concealed bumper-mount hydraulic ram cylinder.',
-        [x * 0.5, 0, isFront ? 1.15 : -1.15]
-      );
-      sleeve.rotation.x = Math.PI / 2;
-      sleeve.position.z = -0.07;
-      unit.add(sleeve);
-
-      const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.020, 0.020, 0.016, 16), brassMat);
-      collar.rotation.x = Math.PI / 2;
-      collar.position.z = -0.005;
-      unit.add(collar);
-
-      // Telescoping piston + sculpted chrome/rubber over-rider head
-      const ramHead = new THREE.Group();
-      unit.add(ramHead);
-
-      const piston = register(
-        new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.28, 16), chromeMat),
-        `${isFront ? 'Front' : 'Rear'} Ram Piston Rod`,
-        'Hard-Chrome Hydraulic Rod',
-        'Telescoping steel piston extending the bumper over-rider 26cm forward on command.',
-        [x * 0.6, 0, isFront ? 1.35 : -1.35]
-      );
-      piston.rotation.x = Math.PI / 2;
-      piston.position.z = -0.14;
-      ramHead.add(piston);
-
-      // Classic DB5 vertical over-rider silhouette
-      const overRiderShape = new THREE.Shape();
-      overRiderShape.moveTo(-0.028, -0.065);
-      overRiderShape.lineTo(0.028, -0.065);
-      overRiderShape.quadraticCurveTo(0.036, 0, 0.024, 0.068);
-      overRiderShape.lineTo(-0.024, 0.068);
-      overRiderShape.quadraticCurveTo(-0.036, 0, -0.028, -0.065);
-
-      const overRiderGeo = new THREE.ExtrudeGeometry(overRiderShape, {
-        depth: 0.042,
-        bevelEnabled: true,
-        bevelThickness: 0.008,
-        bevelSize: 0.006,
-        bevelSegments: 3,
-      });
-      const overRider = register(
-        new THREE.Mesh(overRiderGeo, chromeMat),
-        `${isFront ? 'Front' : 'Rear'} Hydraulic Battering Ram`,
-        'Reinforced Chrome Over-Rider',
-        'Heavy-duty Q-Branch hydraulic ramming bumper horn.',
-        [x * 0.8, 0.05, isFront ? 1.45 : -1.45]
-      );
-      overRider.position.z = -0.01;
-      ramHead.add(overRider);
-
-      const rubberPad = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.095, 0.016), rubberPadMat);
-      rubberPad.position.z = 0.038;
-      ramHead.add(rubberPad);
-
-      return ramHead;
-    };
-
-    const frontRams = [
-      buildRamUnit(-0.30, 0.428, 2.255, true),
-      buildRamUnit(0.30, 0.428, 2.255, true),
-    ];
-    const rearRams = [
-      buildRamUnit(-0.34, 0.455, -2.265, false),
-      buildRamUnit(0.34, 0.455, -2.265, false),
-    ];
-
-    // =========================================================================
-    // 3. BULLET-RESISTANT REAR ARMOR SHIELD (Raycast-Fitted Trunk Slot + Planar Plate)
-    // =========================================================================
-    const SHIELD_Z = -1.71;
-    const SHIELD_HALF_W = 0.348;
-
-    // Interpolate exact raycasted SK_Trunk_101 surface Y(x) so slot & cap never sink or gap
-    const sampleTrunkY = (x: number): number => {
-      if (!trunkShieldProfile || trunkShieldProfile.length === 0) {
-        return 0.994 - 0.32 * x * x;
-      }
-      const pts = trunkShieldProfile;
-      if (x <= pts[0].x) return pts[0].y;
-      if (x >= pts[pts.length - 1].x) return pts[pts.length - 1].y;
-      for (let i = 0; i < pts.length - 1; i++) {
-        if (x >= pts[i].x && x <= pts[i + 1].x) {
-          const t = (x - pts[i].x) / (pts[i + 1].x - pts[i].x);
-          return pts[i].y + (pts[i + 1].y - pts[i].y) * t;
-        }
-      }
-      return pts[0].y;
-    };
-    const centerTrunkY = sampleTrunkY(0);
-
-    const buildCrownedPlanarGeo = (
-      halfW: number,
-      thicknessZ: number,
-      topYAt: (x: number) => number,
-      botYAt: (x: number) => number,
-      bevelZ = 0.0,
-      segs = 32
-    ): THREE.BufferGeometry => {
-      const positions: number[] = [];
-      const indices: number[] = [];
-      const halfT = thicknessZ / 2;
-      const innerT = Math.max(0.001, halfT - bevelZ);
-
-      for (let i = 0; i <= segs; i++) {
-        const u = i / segs;
-        const x = (u * 2 - 1) * halfW;
-        const yBot = botYAt(x);
-        const yTop = topYAt(x);
-        positions.push(
-          x, yBot, +halfT,
-          x, yTop, +innerT,
-          x, yTop, -innerT,
-          x, yBot, -halfT
-        );
-      }
-
-      for (let i = 0; i < segs; i++) {
-        const a = i * 4;
-        const b = (i + 1) * 4;
-        indices.push(a + 0, b + 0, b + 1, a + 0, b + 1, a + 1);
-        indices.push(a + 1, b + 1, b + 2, a + 1, b + 2, a + 2);
-        indices.push(a + 2, b + 2, b + 3, a + 2, b + 3, a + 3);
-        indices.push(a + 3, b + 3, b + 0, a + 3, b + 0, a + 0);
-      }
-      indices.push(0, 1, 2, 0, 2, 3);
-      const last = segs * 4;
-      indices.push(last + 0, last + 2, last + 1, last + 0, last + 3, last + 2);
-
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-      geo.setIndex(indices);
-      geo.computeVertexNormals();
-      return geo;
-    };
-
-    // Beveled dark rubber/anodized slot frame matching the exact shield width & trunk Y(x)
-    const slotBezelGeo = buildCrownedPlanarGeo(
-    SHIELD_HALF_W + 0.007,
-      0.017,
-      (x) => sampleTrunkY(x) + 0.0032,
-      (x) => sampleTrunkY(x) - 0.0025,
-      0.0022,
-      36
-    );
-    const slotBezel = register(
-      new THREE.Mesh(slotBezelGeo, rubberPadMat),
-      'Bullet Shield Boot Slot Seal',
-      'Beveled Weatherstrip Seal',
-      'Flush-fitted beveled slot channel across the upper rear boot lid.',
-      [0, 0.72, -1.15]
-    );
-    slotBezel.position.set(0, 0, SHIELD_Z);
-    root.add(slotBezel);
-
-    // Dark inner recess strip inside the bezel so the slot reads as a physical opening
-    const slotWellGeo = buildCrownedPlanarGeo(
-      SHIELD_HALF_W + 0.003,
-      0.011,
-      (x) => sampleTrunkY(x) + 0.0034,
-      (x) => sampleTrunkY(x) + 0.0010,
-      0.0,
-      36
-    );
-    const slotWell = new THREE.Mesh(slotWellGeo, new THREE.MeshBasicMaterial({ color: 0x050608 }));
-    slotWell.position.set(0, 0, SHIELD_Z);
-    root.add(slotWell);
-
-    // Rising planar ballistic steel shield + flush Silver Birch top cap
-    // Stowed offset = -0.326m so top cap sits flush inside the beveled slot bezel
-    const bulletShieldGroup = new THREE.Group();
-    bulletShieldGroup.position.set(0, -0.326, SHIELD_Z);
-    root.add(bulletShieldGroup);
-
-    const brushedArmorMat = new THREE.MeshStandardMaterial({
-      color: 0xc2c8d0,
-      metalness: 0.36,
-      roughness: 0.38,
-    });
-
-    const shieldGeo = buildCrownedPlanarGeo(
-      SHIELD_HALF_W,
-      0.008,
-        (x) => sampleTrunkY(x) + 0.326,
-          () => centerTrunkY - 0.16,
-          0.0,
-          36
+  // =========================================================================
+  // 1. REVOLVING 3-WAY NUMBER PLATES (Front Valance & Rear Boot)
+  // =========================================================================
+  const plateMats = ([0, 1, 2] as const).map(
+    (v) =>
+      new THREE.MeshStandardMaterial({
+        map: createPlateTexture(v),
+        roughness: 0.26,
+        metalness: 0.22,
+      })
   );
-    const shieldPlate = register(
-      new THREE.Mesh(shieldGeo, brushedArmorMat),
-      'Bullet-Resistant Rear Shield',
-      'Satin Ballistic Armor Steel',
-      'Planar hydraulic armor plate rising vertically from the flush boot-deck slot.',
-      [0, 0.95, -1.25]
-    );
-    bulletShieldGroup.add(shieldPlate);
 
-    // Beveled Silver Birch top cap sitting flush inside the slot bezel when stowed
-    const capGeo = buildCrownedPlanarGeo(
-    SHIELD_HALF_W + 0.003,
-      0.012,
-      (x) => sampleTrunkY(x) + 0.3302,
-      (x) => sampleTrunkY(x) + 0.324,
-      0.0015,
-      36
-    );
-    const shieldCap = register(
-      new THREE.Mesh(capGeo, silverBirchMat),
-      'Bullet Shield Top Cap',
-      'Silver Birch Aluminum Trim',
-      'Body-colored flush cap crowning the bullet-resistant rear shield.',
-      [0, 1.05, -1.25]
-    );
-    bulletShieldGroup.add(shieldCap);
+  const buildPlateAssembly = (isFront: boolean): { group: THREE.Group; drum: THREE.Group } => {
+    const group = new THREE.Group();
+    const plateW = 0.36;
+    const plateH = 0.082;
+    const bezelThick = 0.012;
 
-    // =========================================================================
-    // 4. PASSENGER EJECTOR SEAT ROOF HATCH (RHD: Passenger = +X)
-    // =========================================================================
-    const roofHatchPivot = new THREE.Group();
-    // Hinge along outer passenger edge (x = +0.50) so it swings open cleanly
-    roofHatchPivot.position.set(0.49, 1.325, -0.15);
-    root.add(roofHatchPivot);
+    // Chamfered chrome surround bezel with rectangular window
+    const outer = new THREE.Shape();
+    outer.moveTo(-plateW / 2 - bezelThick, -plateH / 2 - bezelThick);
+    outer.lineTo(plateW / 2 + bezelThick, -plateH / 2 - bezelThick);
+    outer.lineTo(plateW / 2 + bezelThick, plateH / 2 + bezelThick);
+    outer.lineTo(-plateW / 2 - bezelThick, plateH / 2 + bezelThick);
+    outer.closePath();
 
-    const hatchOuter = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.014, 0.56), silverBirchMat);
-    register(
-      hatchOuter,
-      'Ejector Seat Roof Hatch',
-      'Silver Birch Aluminum Panel',
-      'Explosive-bolt passenger roof panel linked to the Q-Branch Roof Hatch arming switch.',
-      [0.55, 1.35, 0]
-    );
-    hatchOuter.position.set(-0.225, 0.012, 0);
-    roofHatchPivot.add(hatchOuter);
+    const hole = new THREE.Path();
+    hole.moveTo(-plateW / 2, -plateH / 2);
+    hole.lineTo(plateW / 2, -plateH / 2);
+    hole.lineTo(plateW / 2, plateH / 2);
+    hole.lineTo(-plateW / 2, plateH / 2);
+    hole.closePath();
+    outer.holes.push(hole);
 
-    const hatchUnderMat = new THREE.MeshStandardMaterial({
-      map: createRoofHatchUndersideTexture(),
-      roughness: 0.45,
-      metalness: 0.2,
+    const bezelGeo = new THREE.ExtrudeGeometry(outer, {
+      depth: 0.014,
+      bevelEnabled: true,
+      bevelThickness: 0.003,
+      bevelSize: 0.003,
+      bevelSegments: 2,
     });
-    const hatchInner = new THREE.Mesh(new THREE.PlaneGeometry(0.41, 0.52), hatchUnderMat);
-    hatchInner.rotation.x = Math.PI / 2;
-    hatchInner.position.set(-0.225, 0.004, 0);
-    roofHatchPivot.add(hatchInner);
+    const bezel = register(
+      new THREE.Mesh(bezelGeo, chromeMat),
+      isFront ? 'Front Revolving Plate Bezel' : 'Rear Revolving Plate Bezel',
+      'Chrome-Plated Brass Frame',
+      'Concealed motorized frame housing the 3-sided rotating identity plates.',
+      isFront ? [0, -0.1, 1.3] : [0, 0.1, -1.3]
+    );
+    bezel.position.z = -0.008;
+    group.add(bezel);
 
-    // =========================================================================
-    // 5. REAR SMOKE, LEFT-TAILLIGHT OIL PUMP, & RIGHT-TAILLIGHT CALTROP DISPENSER
-    // =========================================================================
-    for (const sideX of [-0.43, 0.43]) {
-      const smokeNozzle = register(
-        new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.018, 0.09, 16), gunmetalMat),
-        'Rear Smoke Screen Nozzle',
-        'Heat-Treated Exhaust Shroud',
-        'High-output smoke oil injector mounted beside the twin exhaust pipes.',
-        [sideX * 0.6, -0.1, -1.25]
+    // Triangular prism drum rotating around X-axis
+    const drum = new THREE.Group();
+    group.add(drum);
+
+    const apothem = 0.023;
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, plateW - 0.01, 3), gunmetalMat);
+    core.rotation.z = Math.PI / 2;
+    drum.add(core);
+
+    const plateFaceGeo = new THREE.BoxGeometry(plateW - 0.006, plateH - 0.004, 0.004);
+    for (let i = 0; i < 3; i++) {
+      const angle = i * ((Math.PI * 2) / 3);
+      const facePivot = new THREE.Group();
+      facePivot.rotation.x = -angle;
+      const faceMesh = register(
+        new THREE.Mesh(plateFaceGeo, plateMats[i]),
+        `${isFront ? 'Front' : 'Rear'} Number Plate (${['BMT 216A', '4711-EA-62', 'LU 6789'][i]})`,
+        'Pressed Aluminum Plate',
+        '3-way Q-Branch identity plate synced to the brass E-gate selector in the center armrest.',
+        isFront ? [0, -0.08, 1.35] : [0, 0.08, -1.35]
       );
-      smokeNozzle.rotation.x = Math.PI / 2;
-      smokeNozzle.position.set(sideX, 0.295, -2.265);
-      root.add(smokeNozzle);
+      faceMesh.position.z = apothem;
+      facePivot.add(faceMesh);
+      drum.add(facePivot);
     }
 
-    // --- 5A. LEFT TAILLIGHT (+X): Hinged Amber Lamp + Internal Oil Pump & Nozzle ---
-    const leftOilLampPivot = new THREE.Group();
-    leftOilLampPivot.position.copy(
-      tailLightSplits?.leftTopPivotPos ?? new THREE.Vector3(0.6325, 0.828, -2.168)
-    );
-    root.add(leftOilLampPivot);
+    return { group, drum };
+  };
 
-    if (tailLightSplits) {
-      for (const m of tailLightSplits.leftTopMeshes) {
-        register(
-          m,
-          'Left Amber Indicator (Oil Nozzle Cover)',
-          'Hinged Lucas Amber Lamp',
-          'Top-hinged left rear amber indicator lifting 75° to expose the pressurized oil slick nozzle.',
-          [0.85, 0.35, -1.25]
-        );
-        leftOilLampPivot.add(m);
+  const frontPlate = buildPlateAssembly(true);
+  frontPlate.group.position.set(0, 0.342, 2.258);
+  root.add(frontPlate.group);
+
+  const rearPlate = buildPlateAssembly(false);
+  rearPlate.group.position.set(0, 0.635, -2.194);
+  rearPlate.group.rotation.y = Math.PI;
+  rearPlate.group.rotation.x = 0.12; // Matches DB5 rear boot slope
+  root.add(rearPlate.group);
+
+  // =========================================================================
+  // 2. FRONT & REAR HYDRAULIC BATTERING RAMS
+  // =========================================================================
+  const buildRamUnit = (x: number, y: number, z: number, isFront: boolean): THREE.Group => {
+    const unit = new THREE.Group();
+    unit.position.set(x, y, z);
+    if (!isFront) unit.rotation.y = Math.PI;
+    root.add(unit);
+
+    // Fixed outer hydraulic sleeve + brass gland nut
+    const sleeve = register(
+      new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.14, 18), gunmetalMat),
+      `${isFront ? 'Front' : 'Rear'} Ram Hydraulic Cylinder`,
+      'High-Pressure Steel Sleeve',
+      'Concealed bumper-mount hydraulic ram cylinder.',
+      [x * 0.5, 0, isFront ? 1.15 : -1.15]
+    );
+    sleeve.rotation.x = Math.PI / 2;
+    sleeve.position.z = -0.07;
+    unit.add(sleeve);
+
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.020, 0.020, 0.016, 16), brassMat);
+    collar.rotation.x = Math.PI / 2;
+    collar.position.z = -0.005;
+    unit.add(collar);
+
+    // Telescoping piston + sculpted chrome/rubber over-rider head
+    const ramHead = new THREE.Group();
+    unit.add(ramHead);
+
+    const piston = register(
+      new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.28, 16), chromeMat),
+      `${isFront ? 'Front' : 'Rear'} Ram Piston Rod`,
+      'Hard-Chrome Hydraulic Rod',
+      'Telescoping steel piston extending the bumper over-rider 26cm forward on command.',
+      [x * 0.6, 0, isFront ? 1.35 : -1.35]
+    );
+    piston.rotation.x = Math.PI / 2;
+    piston.position.z = -0.14;
+    ramHead.add(piston);
+
+    // Classic DB5 vertical over-rider silhouette
+    const overRiderShape = new THREE.Shape();
+    overRiderShape.moveTo(-0.028, -0.065);
+    overRiderShape.lineTo(0.028, -0.065);
+    overRiderShape.quadraticCurveTo(0.036, 0, 0.024, 0.068);
+    overRiderShape.lineTo(-0.024, 0.068);
+    overRiderShape.quadraticCurveTo(-0.036, 0, -0.028, -0.065);
+
+    const overRiderGeo = new THREE.ExtrudeGeometry(overRiderShape, {
+      depth: 0.042,
+      bevelEnabled: true,
+      bevelThickness: 0.008,
+      bevelSize: 0.006,
+      bevelSegments: 3,
+    });
+    const overRider = register(
+      new THREE.Mesh(overRiderGeo, chromeMat),
+      `${isFront ? 'Front' : 'Rear'} Hydraulic Battering Ram`,
+      'Reinforced Chrome Over-Rider',
+      'Heavy-duty Q-Branch hydraulic ramming bumper horn.',
+      [x * 0.8, 0.05, isFront ? 1.45 : -1.45]
+    );
+    overRider.position.z = -0.01;
+    ramHead.add(overRider);
+
+    const rubberPad = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.095, 0.016), rubberPadMat);
+    rubberPad.position.z = 0.038;
+    ramHead.add(rubberPad);
+
+    return ramHead;
+  };
+
+  const frontRams = [
+    buildRamUnit(-0.30, 0.428, 2.255, true),
+    buildRamUnit(0.30, 0.428, 2.255, true),
+  ];
+  const rearRams = [
+    buildRamUnit(-0.34, 0.455, -2.265, false),
+    buildRamUnit(0.34, 0.455, -2.265, false),
+  ];
+
+  // =========================================================================
+  // 3. BULLET-RESISTANT REAR ARMOR SHIELD (Raycast-Fitted Trunk Slot + Planar Plate)
+  // =========================================================================
+  const SHIELD_Z = -1.71;
+  const SHIELD_HALF_W = 0.348;
+
+  // Interpolate exact raycasted SK_Trunk_101 surface Y(x) so slot & cap never sink or gap
+  const sampleTrunkY = (x: number): number => {
+    if (!trunkShieldProfile || trunkShieldProfile.length === 0) {
+      return 0.994 - 0.32 * x * x;
+    }
+    const pts = trunkShieldProfile;
+    if (x <= pts[0].x) return pts[0].y;
+    if (x >= pts[pts.length - 1].x) return pts[pts.length - 1].y;
+    for (let i = 0; i < pts.length - 1; i++) {
+      if (x >= pts[i].x && x <= pts[i + 1].x) {
+        const t = (x - pts[i].x) / (pts[i + 1].x - pts[i].x);
+        return pts[i].y + (pts[i + 1].y - pts[i].y) * t;
       }
     }
+    return pts[0].y;
+  };
+  const centerTrunkY = sampleTrunkY(0);
 
-    const cavityMat = new THREE.MeshStandardMaterial({
-      color: 0x090b0f,
-      roughness: 0.85,
-      metalness: 0.2,
-    });
-    const leftCavity = new THREE.Mesh(new THREE.BoxGeometry(0.068, 0.080, 0.065), cavityMat);
-    leftCavity.position.set(0.6325, 0.785, -2.150);
-    root.add(leftCavity);
+  const buildCrownedPlanarGeo = (
+    halfW: number,
+    thicknessZ: number,
+    topYAt: (x: number) => number,
+    botYAt: (x: number) => number,
+    bevelZ = 0.0,
+    segs = 32
+  ): THREE.BufferGeometry => {
+    const positions: number[] = [];
+    const indices: number[] = [];
+    const halfT = thicknessZ / 2;
+    const innerT = Math.max(0.001, halfT - bevelZ);
 
-    for (const sx of [0.612, 0.652]) {
-      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.008, 0.045), chromeMat);
-      arm.position.set(sx - 0.6325, -0.025, -0.020);
+    for (let i = 0; i <= segs; i++) {
+      const u = i / segs;
+      const x = (u * 2 - 1) * halfW;
+      const yBot = botYAt(x);
+      const yTop = topYAt(x);
+      positions.push(
+        x, yBot, +halfT,
+        x, yTop, +innerT,
+        x, yTop, -innerT,
+        x, yBot, -halfT
+      );
+    }
+
+    for (let i = 0; i < segs; i++) {
+      const a = i * 4;
+      const b = (i + 1) * 4;
+      indices.push(a + 0, b + 0, b + 1, a + 0, b + 1, a + 1);
+      indices.push(a + 1, b + 1, b + 2, a + 1, b + 2, a + 2);
+      indices.push(a + 2, b + 2, b + 3, a + 2, b + 3, a + 3);
+      indices.push(a + 3, b + 3, b + 0, a + 3, b + 0, a + 0);
+    }
+    indices.push(0, 1, 2, 0, 2, 3);
+    const last = segs * 4;
+    indices.push(last + 0, last + 2, last + 1, last + 0, last + 3, last + 2);
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    return geo;
+  };
+
+  // Beveled dark rubber/anodized slot frame matching the exact shield width & trunk Y(x)
+  const slotBezelGeo = buildCrownedPlanarGeo(
+    SHIELD_HALF_W + 0.007,
+    0.017,
+    (x) => sampleTrunkY(x) + 0.0032,
+    (x) => sampleTrunkY(x) - 0.0025,
+    0.0022,
+    36
+  );
+  const slotBezel = register(
+    new THREE.Mesh(slotBezelGeo, rubberPadMat),
+    'Bullet Shield Boot Slot Seal',
+    'Beveled Weatherstrip Seal',
+    'Flush-fitted beveled slot channel across the upper rear boot lid.',
+    [0, 0.72, -1.15]
+  );
+  slotBezel.position.set(0, 0, SHIELD_Z);
+  root.add(slotBezel);
+
+  // Dark inner recess strip inside the bezel so the slot reads as a physical opening
+  const slotWellGeo = buildCrownedPlanarGeo(
+    SHIELD_HALF_W + 0.003,
+    0.011,
+    (x) => sampleTrunkY(x) + 0.0034,
+    (x) => sampleTrunkY(x) + 0.0010,
+    0.0,
+    36
+  );
+  const slotWell = new THREE.Mesh(slotWellGeo, new THREE.MeshBasicMaterial({ color: 0x050608 }));
+  slotWell.position.set(0, 0, SHIELD_Z);
+  root.add(slotWell);
+
+  // Rising planar ballistic steel shield + flush Silver Birch top cap
+  // Stowed offset = -0.326m so top cap sits flush inside the beveled slot bezel
+  const bulletShieldGroup = new THREE.Group();
+  bulletShieldGroup.position.set(0, -0.326, SHIELD_Z);
+  root.add(bulletShieldGroup);
+
+  const brushedArmorMat = new THREE.MeshStandardMaterial({
+    color: 0xc2c8d0,
+    metalness: 0.36,
+    roughness: 0.38,
+  });
+
+  const shieldGeo = buildCrownedPlanarGeo(
+    SHIELD_HALF_W,
+    0.008,
+    (x) => sampleTrunkY(x) + 0.326,
+    () => centerTrunkY - 0.16,
+    0.0,
+    36
+  );
+  const shieldPlate = register(
+    new THREE.Mesh(shieldGeo, brushedArmorMat),
+    'Bullet-Resistant Rear Shield',
+    'Satin Ballistic Armor Steel',
+    'Planar hydraulic armor plate rising vertically from the flush boot-deck slot.',
+    [0, 0.95, -1.25]
+  );
+  bulletShieldGroup.add(shieldPlate);
+
+  // Beveled Silver Birch top cap sitting flush inside the slot bezel when stowed
+  const capGeo = buildCrownedPlanarGeo(
+    SHIELD_HALF_W + 0.003,
+    0.012,
+    (x) => sampleTrunkY(x) + 0.3302,
+    (x) => sampleTrunkY(x) + 0.324,
+    0.0015,
+    36
+  );
+  const shieldCap = register(
+    new THREE.Mesh(capGeo, silverBirchMat),
+    'Bullet Shield Top Cap',
+    'Silver Birch Aluminum Trim',
+    'Body-colored flush cap crowning the bullet-resistant rear shield.',
+    [0, 1.05, -1.25]
+  );
+  bulletShieldGroup.add(shieldCap);
+
+  // =========================================================================
+  // 4. PASSENGER EJECTOR SEAT ROOF HATCH (RHD: Passenger = +X)
+  // =========================================================================
+  const roofHatchPivot = new THREE.Group();
+  // Hinge along outer passenger edge (x = +0.50) so it swings open cleanly
+  roofHatchPivot.position.set(0.49, 1.325, -0.15);
+  root.add(roofHatchPivot);
+
+  const hatchOuter = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.014, 0.56), silverBirchMat);
+  register(
+    hatchOuter,
+    'Ejector Seat Roof Hatch',
+    'Silver Birch Aluminum Panel',
+    'Explosive-bolt passenger roof panel linked to the Q-Branch Roof Hatch arming switch.',
+    [0.55, 1.35, 0]
+  );
+  hatchOuter.position.set(-0.225, 0.012, 0);
+  roofHatchPivot.add(hatchOuter);
+
+  const hatchUnderMat = new THREE.MeshStandardMaterial({
+    map: createRoofHatchUndersideTexture(),
+    roughness: 0.45,
+    metalness: 0.2,
+  });
+  const hatchInner = new THREE.Mesh(new THREE.PlaneGeometry(0.41, 0.52), hatchUnderMat);
+  hatchInner.rotation.x = Math.PI / 2;
+  hatchInner.position.set(-0.225, 0.004, 0);
+  roofHatchPivot.add(hatchInner);
+
+  // =========================================================================
+  // 5. REAR SMOKE, LEFT-TAILLIGHT OIL PUMP, & RIGHT-TAILLIGHT CALTROP DISPENSER
+  // =========================================================================
+  for (const sideX of [-0.43, 0.43]) {
+    const smokeNozzle = register(
+      new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.018, 0.09, 16), gunmetalMat),
+      'Rear Smoke Screen Nozzle',
+      'Heat-Treated Exhaust Shroud',
+      'High-output smoke oil injector mounted beside the twin exhaust pipes.',
+      [sideX * 0.6, -0.1, -1.25]
+    );
+    smokeNozzle.rotation.x = Math.PI / 2;
+    smokeNozzle.position.set(sideX, 0.295, -2.265);
+    root.add(smokeNozzle);
+  }
+
+  // --- 5A. LEFT TAILLIGHT (+X): Hinged Amber Lamp + Internal Oil Pump & Nozzle ---
+  const leftOilLampPivot = new THREE.Group();
+  leftOilLampPivot.position.copy(
+    tailLightSplits?.leftTopPivotPos ?? new THREE.Vector3(0.6325, 0.828, -2.168)
+  );
+  root.add(leftOilLampPivot);
+
+  if (tailLightSplits) {
+    for (const m of tailLightSplits.leftTopMeshes) {
+      register(
+        m,
+        'Left Amber Indicator (Oil Nozzle Cover)',
+        'Hinged Lucas Amber Lamp',
+        'Top-hinged left rear amber indicator lifting 75° to expose the pressurized oil slick nozzle.',
+        [0.85, 0.35, -1.25]
+      );
+      leftOilLampPivot.add(m);
+    }
+  }
+
+  const cavityMat = new THREE.MeshStandardMaterial({
+    color: 0x090b0f,
+    roughness: 0.85,
+    metalness: 0.2,
+  });
+  const leftCavity = new THREE.Mesh(new THREE.BoxGeometry(0.068, 0.080, 0.065), cavityMat);
+  leftCavity.position.set(0.6325, 0.785, -2.150);
+  root.add(leftCavity);
+
+    const leftOilArms: THREE.Mesh[] = [];
+    for (const sx of [0.614, 0.650]) {
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.006, 0.036), chromeMat);
+      arm.position.set(sx - 0.6325, -0.012, 0.002);
+      arm.visible = false;
       leftOilLampPivot.add(arm);
+      leftOilArms.push(arm);
     }
 
     // Hollow machined dispensing pipe (LatheGeometry with real inner bore facing -Z)
@@ -737,30 +754,30 @@ function buildTetraCaltropGeometry(radius = 0.022): THREE.BufferGeometry {
       roughness: 0.26,
     });
     const oilRackFrame = register(
-      new THREE.Mesh(new THREE.BoxGeometry(0.064, 0.21, 0.070), aluFrameMat),
+      new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.20, 0.064), aluFrameMat),
       'Q-Branch Oil Pump Mounting Frame',
       'Slotted Machined Aluminum',
       'Internal left-wing structural frame supporting the hydraulic oil pump and upper nozzle.',
       [0.92, 0.20, -1.10]
     );
-    oilRackFrame.position.set(0.625, 0.68, -2.06);
+    oilRackFrame.position.set(0.585, 0.68, -2.06);
     root.add(oilRackFrame);
 
     const oilPumpCylinder = register(
-      new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.135, 20), aluFrameMat),
+      new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.135, 20), aluFrameMat),
       'Pressurized Oil Slick Pump Cylinder',
       'Turned Aluminum & Brass Manifold',
       'High-pressure hydraulic pump driving slick oil up the braided hose to the left taillight.',
       [0.95, 0.16, -1.05]
     );
     oilPumpCylinder.rotation.x = Math.PI / 2;
-    oilPumpCylinder.position.set(0.620, 0.635, -1.97);
+    oilPumpCylinder.position.set(0.582, 0.635, -1.97);
     root.add(oilPumpCylinder);
 
     const hoseCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0.620, 0.655, -1.91),
-      new THREE.Vector3(0.622, 0.745, -1.95),
-      new THREE.Vector3(0.632, 0.785, -2.12),
+      new THREE.Vector3(0.582, 0.655, -1.91),
+      new THREE.Vector3(0.585, 0.745, -1.95),
+      new THREE.Vector3(0.625, 0.785, -2.12),
     ]);
     const oilHose = register(
       new THREE.Mesh(new THREE.TubeGeometry(hoseCurve, 16, 0.0085, 10, false), rubberPadMat),
@@ -942,54 +959,135 @@ function buildTetraCaltropGeometry(radius = 0.022): THREE.BufferGeometry {
     smokePoints.renderOrder = 50; // Always render after transparent car glass, lights, dashboard, and badges
     root.add(smokePoints);
 
-    // --- B. Continuous Pressurized Fluid Jet (GLSL Shader) + Fine Soft-Mist Spray ---
-    const jetCurvePoints: THREE.Vector3[] = [];
-    const jetSteps = 28;
-    for (let i = 0; i <= jetSteps; i++) {
-      const t = i / jetSteps;
-      const z = -2.268 - t * 1.48;
-      const y = 0.785 - 0.76 * t * t;
-      jetCurvePoints.push(new THREE.Vector3(0.6325, y, z));
+    // --- B. Nozzle-Anchored Viscous Filament, Deformed Droplets & Organic FBM Metaball Puddle ---
+    const OIL_COUNT = 44;
+    const oilDroplets: OilDroplet[] = [];
+    const oilSeeds = new Float32Array(OIL_COUNT);
+    for (let i = 0; i < OIL_COUNT; i++) {
+      oilDroplets.push({
+        active: false,
+        age: 0,
+        life: 1.25,
+        radius: 0.007,
+        pos: new THREE.Vector3(0, -10, 0),
+        vel: new THREE.Vector3(),
+      });
+      oilSeeds[i] = Math.random() * 62.8;
     }
-    const jetCurve = new THREE.CatmullRomCurve3(jetCurvePoints);
-    const jetGeo = new THREE.TubeGeometry(jetCurve, 40, 1.0, 14, false);
-    // Taper tube radius along length: tight 5.2mm at nozzle bore -> 36mm aerated spray fan near asphalt
-    const jetPos = jetGeo.attributes.position;
-    const jetUv = jetGeo.attributes.uv;
-    const tmpPt = new THREE.Vector3();
-    for (let i = 0; i < jetPos.count; i++) {
-      const u = jetUv.getX(i);
-      const center = jetCurve.getPointAt(THREE.MathUtils.clamp(u, 0, 1));
-      const r = THREE.MathUtils.lerp(0.0052, 0.0155, Math.pow(u, 1.15));
-      tmpPt.fromBufferAttribute(jetPos, i).sub(center).multiplyScalar(r).add(center);
-      jetPos.setXYZ(i, tmpPt.x, tmpPt.y, tmpPt.z);
-    }
-    jetGeo.computeVertexNormals();
 
-    const oilJetMat = new THREE.ShaderMaterial({
-      transparent: false,
+    const blobGeo = new THREE.SphereGeometry(1.0, 18, 14);
+    blobGeo.setAttribute('aSeed', new THREE.InstancedBufferAttribute(oilSeeds, 1));
+
+    // Shared Beer-Lambert + IOR 1.47 dielectric shader with organic 3D surface wobble (no rigid balls/spines)
+    const oilBlobMat = new THREE.ShaderMaterial({
+      transparent: true,
       depthWrite: true,
-      side: THREE.FrontSide,
       uniforms: {
         uTime: { value: 0 },
-        uFlow: { value: 0 },
+      },
+      vertexShader: `
+        attribute float aSeed;
+        varying vec3 vNormal;
+        varying vec3 vViewDir;
+        uniform float uTime;
+        void main() {
+          // Organic liquid droplet wobble + teardrop taper along local Z
+          vec3 p = position;
+          float wobble = 1.0
+            + 0.18 * sin(p.z * 3.8 + aSeed + uTime * 9.5)
+            + 0.14 * cos(p.x * 4.2 - aSeed * 1.3 + uTime * 7.2)
+            + 0.11 * sin(p.y * 4.5 + aSeed * 0.7);
+          p.xy *= wobble * (1.0 - 0.22 * smoothstep(-0.2, 1.0, -p.z));
+
+          mat4 m = modelMatrix * instanceMatrix;
+          vec4 wp = m * vec4(p, 1.0);
+          vNormal = normalize(mat3(m) * normalize(normal + vec3(0.15 * sin(p.z * 4.0 + aSeed), 0.12 * cos(p.x * 4.0), 0.0)));
+          vViewDir = normalize(cameraPosition - wp.xyz);
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vNormal;
+        varying vec3 vViewDir;
+        void main() {
+          vec3 N = normalize(vNormal);
+          vec3 V = normalize(vViewDir);
+          float ndotv = clamp(dot(N, V), 0.0, 1.0);
+
+          // Beer-Lambert depth absorption: thin edges glow amber/golden-brown, thick centers -> near-black
+          float opticalDepth = mix(0.20, 2.3, pow(ndotv, 0.85));
+          vec3 absorption = exp(-vec3(2.4, 5.2, 11.5) * opticalDepth);
+          vec3 amberGlow = vec3(0.78, 0.38, 0.07) * absorption;
+          vec3 coreOil = mix(vec3(0.020, 0.012, 0.007), amberGlow, 0.85);
+
+          // Dielectric Fresnel (IOR ~1.47 -> F0 = 0.0362) & soft studio specular (no sharp white spine)
+          float F0 = 0.0362;
+          float fresnel = F0 + (1.0 - F0) * pow(1.0 - ndotv, 5.0);
+          vec3 L1 = normalize(vec3(0.35, 0.90, 0.25));
+          float spec1 = pow(max(dot(N, normalize(L1 + V)), 0.0), 64.0);
+          vec3 L2 = normalize(vec3(-0.4, 0.7, -0.5));
+          float spec2 = pow(max(dot(N, normalize(L2 + V)), 0.0), 36.0);
+
+          vec3 envRefl = vec3(0.88, 0.92, 0.98) * fresnel;
+          vec3 col = coreOil + envRefl + vec3(1.0) * (spec1 * 0.72 + spec2 * 0.35);
+          float alpha = mix(0.84, 1.0, smoothstep(0.12, 0.55, ndotv));
+          gl_FragColor = vec4(col, alpha);
+        }
+      `,
+    });
+
+    const oilBlobInstanced = new THREE.InstancedMesh(blobGeo, oilBlobMat, OIL_COUNT);
+    oilBlobInstanced.frustumCulled = false;
+    oilBlobInstanced.renderOrder = 2;
+    root.add(oilBlobInstanced);
+
+    // Nozzle-anchored clinging viscous filament (starts inside hollow pipe bore -> stretches & necks organically)
+    const filCurvePts: THREE.Vector3[] = [];
+    for (let i = 0; i <= 14; i++) {
+      const t = i / 14;
+      filCurvePts.push(new THREE.Vector3(0, -0.025 * t * t, -t * 0.24));
+    }
+    const filCurve = new THREE.CatmullRomCurve3(filCurvePts);
+    const filGeo = new THREE.TubeGeometry(filCurve, 22, 1.0, 12, false);
+    const filPos = filGeo.attributes.position;
+    const filUv = filGeo.attributes.uv;
+    const filPt = new THREE.Vector3();
+    for (let i = 0; i < filPos.count; i++) {
+      const u = filUv.getX(i);
+      const c = filCurve.getPointAt(THREE.MathUtils.clamp(u, 0, 1));
+      const r = THREE.MathUtils.lerp(0.0050, 0.0018, Math.pow(u, 0.7));
+      filPt.fromBufferAttribute(filPos, i).sub(c).multiplyScalar(r).add(c);
+      filPos.setXYZ(i, filPt.x, filPt.y, filPt.z);
+    }
+    filGeo.computeVertexNormals();
+
+    const oilFilamentMat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: true,
+      uniforms: {
+        uTime: { value: 0 },
+        uActive: { value: 0 },
+        uLength: { value: 1 },
       },
       vertexShader: `
         varying vec2 vUv;
         varying vec3 vNormal;
         varying vec3 vViewDir;
         uniform float uTime;
+        uniform float uLength;
         void main() {
           vUv = uv;
           float u = uv.x;
-          float env = smoothstep(0.04, 0.45, u);
-          // Traveling pressure pulses & gentle sinuous sway along the liquid stream
-          float pulse = 1.0 + 0.22 * sin(u * 18.0 - uTime * 8.5) + 0.12 * cos(u * 31.0 - uTime * 13.0);
-          vec3 displaced = position + normal * ((pulse - 1.0) * 0.007 * env);
-          displaced.x += sin(u * 11.0 - uTime * 5.2) * 0.012 * env;
-          displaced.y += cos(u * 9.0 - uTime * 4.6) * 0.007 * env;
+          vec3 p = position;
+          p.z *= uLength;
+          // Rayleigh-Plateau necking/bulging waves along the stretching viscous ligament
+          float env = smoothstep(0.05, 0.35, u);
+          float pinch = 1.0 + 0.38 * sin(u * 14.0 - uTime * 11.0);
+          p.xy += normal.xy * ((pinch - 1.0) * 0.0028 * env);
+          p.x += sin(u * 9.0 - uTime * 6.5) * 0.004 * env;
+          p.y += cos(u * 7.0 - uTime * 5.8) * 0.003 * env;
 
-          vec4 wp = modelMatrix * vec4(displaced, 1.0);
+          vec4 wp = modelMatrix * vec4(p, 1.0);
           vNormal = normalize(mat3(modelMatrix) * normal);
           vViewDir = normalize(cameraPosition - wp.xyz);
           gl_Position = projectionMatrix * viewMatrix * wp;
@@ -999,121 +1097,62 @@ function buildTetraCaltropGeometry(radius = 0.022): THREE.BufferGeometry {
         varying vec2 vUv;
         varying vec3 vNormal;
         varying vec3 vViewDir;
-        uniform float uTime;
-        uniform float uFlow;
-        float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-        float noise(vec2 p) {
-          vec2 i = floor(p); vec2 f = fract(p);
-          vec2 u = f * f * (3.0 - 2.0 * f);
-          return mix(
-            mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
-            mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
-            u.y
-          );
-        }
+        uniform float uActive;
         void main() {
-          if (uFlow <= 0.01 || vUv.x > uFlow) discard;
-          float u = vUv.x;
-
-          float flowScroll = u * 12.0 - uTime * 5.5;
-          float ripple = noise(vec2(flowScroll, vUv.y * 6.0)) - 0.5;
-
-          vec3 N = normalize(vNormal + vec3(ripple * 0.14, ripple * 0.08, 0.0));
+          if (uActive <= 0.01) discard;
+          vec3 N = normalize(vNormal);
           vec3 V = normalize(vViewDir);
-          float fresnel = pow(1.0 - max(dot(N, V), 0.0), 3.2);
-
+          float ndotv = clamp(dot(N, V), 0.0, 1.0);
+          // Thin stretched ligament glows warm golden-amber via Beer-Lambert absorption
+          float opticalDepth = mix(0.18, 1.35, pow(ndotv, 0.9)) * mix(1.0, 0.35, vUv.x);
+          vec3 absorption = exp(-vec3(2.4, 5.2, 11.5) * opticalDepth);
+          vec3 col = mix(vec3(0.025, 0.014, 0.008), vec3(0.82, 0.42, 0.08) * absorption, 0.9);
+          float F0 = 0.0362;
+          float fresnel = F0 + (1.0 - F0) * pow(1.0 - ndotv, 5.0);
           vec3 L1 = normalize(vec3(0.35, 0.90, 0.25));
-          float spec1 = pow(max(dot(N, normalize(L1 + V)), 0.0), 64.0);
-          vec3 L2 = normalize(vec3(-0.4, 0.7, -0.5));
-          float spec2 = pow(max(dot(N, normalize(L2 + V)), 0.0), 36.0);
-
-          vec3 deepOil = vec3(0.014, 0.012, 0.010);
-          vec3 amberRim = vec3(0.065, 0.040, 0.016);
-          vec3 col = mix(deepOil, amberRim, fresnel * 0.45);
-          col += vec3(0.95, 0.96, 1.0) * (spec1 * 0.95 + spec2 * 0.45);
-          gl_FragColor = vec4(col, 1.0);
+          float spec = pow(max(dot(N, normalize(L1 + V)), 0.0), 48.0);
+          col += vec3(0.88, 0.92, 0.98) * fresnel + vec3(1.0) * spec * 0.55;
+          float tipFade = 1.0 - smoothstep(0.75, 1.0, vUv.x);
+          gl_FragColor = vec4(col, uActive * tipFade * 0.95);
         }
       `,
     });
-    const oilJetMesh = new THREE.Mesh(jetGeo, oilJetMat);
-    oilJetMesh.renderOrder = 2;
-    root.add(oilJetMesh);
+    const oilFilamentMesh = new THREE.Mesh(filGeo, oilFilamentMat);
+    oilFilamentMesh.position.set(0.6325, 0.785, -2.250);
+    oilFilamentMesh.renderOrder = 2;
+    root.add(oilFilamentMesh);
 
-    // Fine opaque glossy oil splatter droplets around the breaking jet
-    const OIL_COUNT = 160;
-    const oilDroplets: OilDroplet[] = [];
-    const oilPosAttr = new Float32Array(OIL_COUNT * 3);
-    const oilAgeAttr = new Float32Array(OIL_COUNT);
-    for (let i = 0; i < OIL_COUNT; i++) {
-      oilDroplets.push({
-        active: false,
-        age: 0,
-        life: 0.9,
-        pos: new THREE.Vector3(0, -10, 0),
-        vel: new THREE.Vector3(),
-      });
-      oilPosAttr[i * 3 + 1] = -10;
+    const MAX_METABALLS = 36;
+    const oilMetaballs: OilMetaball[] = [];
+    const oilBallUniforms: THREE.Vector4[] = [];
+    for (let i = 0; i < MAX_METABALLS; i++) {
+      oilMetaballs.push({ active: false, x: 0, z: -10, vx: 0, vz: 0, r: 0 });
+      oilBallUniforms.push(new THREE.Vector4(0, -10, 0, 0));
     }
-    const oilMistGeo = new THREE.BufferGeometry();
-    oilMistGeo.setAttribute('position', new THREE.BufferAttribute(oilPosAttr, 3));
-    oilMistGeo.setAttribute('aAge', new THREE.BufferAttribute(oilAgeAttr, 1));
-    const oilMistMat = new THREE.ShaderMaterial({
-      transparent: false,
-      depthWrite: true,
-      uniforms: {
-        uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
-      },
-      vertexShader: `
-        attribute float aAge;
-        varying float vAge;
-        uniform float uPixelRatio;
-        void main() {
-          vAge = aAge;
-          vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          gl_Position = projectionMatrix * mv;
-          float sz = mix(3.2, 6.0, aAge);
-          gl_PointSize = sz * uPixelRatio * (1.8 / max(0.4, -mv.z));
-        }
-      `,
-      fragmentShader: `
-        varying float vAge;
-        void main() {
-          vec2 p = gl_PointCoord - 0.5;
-          if (length(p) > 0.48) discard;
-          // Glossy opaque black oil droplet with studio specular glint
-          float glint = smoothstep(0.18, 0.0, length(p - vec2(-0.14, -0.14)));
-          vec3 col = vec3(0.015, 0.013, 0.011) + vec3(0.75, 0.78, 0.82) * glint;
-          gl_FragColor = vec4(col, 1.0);
-        }
-      `,
-    });
-    const oilMistPoints = new THREE.Points(oilMistGeo, oilMistMat);
-    oilMistPoints.frustumCulled = false;
-    oilMistPoints.renderOrder = 2;
-    root.add(oilMistPoints);
+    const oilImpact = new THREE.Vector3(0.63, -3.5, 10.0);
 
     const oilPuddleMat = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
       uniforms: {
-        uSpread: { value: 0.0 },
+        uBalls: { value: oilBallUniforms },
+        uImpact: { value: oilImpact },
         uTime: { value: 0.0 },
       },
       vertexShader: `
-      varying vec2 vUv;
       varying vec3 vWorldPos;
       void main() {
-        vUv = uv;
         vec4 wp = modelMatrix * vec4(position, 1.0);
         vWorldPos = wp.xyz;
         gl_Position = projectionMatrix * viewMatrix * wp;
       }
     `,
       fragmentShader: `
-      varying vec2 vUv;
       varying vec3 vWorldPos;
-      uniform float uSpread;
+      uniform vec4 uBalls[36];
+      uniform vec3 uImpact;
       uniform float uTime;
+
       float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
       float noise(vec2 p) {
         vec2 i = floor(p); vec2 f = fract(p);
@@ -1126,53 +1165,87 @@ function buildTetraCaltropGeometry(radius = 0.022): THREE.BufferGeometry {
       }
       float fbm(vec2 p) {
         float v = 0.0; float a = 0.5;
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 3; i++) {
           v += a * noise(p);
-          p *= 2.05; a *= 0.5;
+          p *= 2.07; a *= 0.5;
         }
         return v;
       }
+
+      float evalField(vec2 p) {
+        float F = 0.0;
+        for (int i = 0; i < 36; i++) {
+          vec4 b = uBalls[i];
+          if (b.z <= 0.001) continue;
+          vec2 d = p - b.xy;
+          F += (b.z * b.z) / (dot(d, d) + 0.0005);
+        }
+        if (F < 0.35) return F;
+        // Domain-warped organic fingers so puddle never looks circular or uniform
+        vec2 q = p * 3.8;
+        float warp = (fbm(q) - 0.5) * 0.55 + (fbm(q * 2.4 + vec2(3.1, 1.7)) - 0.5) * 0.22;
+        return F + warp * smoothstep(0.35, 1.05, F);
+      }
+
       void main() {
-        if (uSpread <= 0.01) discard;
-        vec2 p = (vUv - 0.5) * 2.0;
-        float n1 = fbm(p * 3.4 + vec2(0.0, uTime * 0.08));
-        float n2 = fbm(p * 7.2 - vec2(uTime * 0.04, 0.0));
-        float warp = n1 * 0.38 + n2 * 0.14;
+        vec2 p = vWorldPos.xz;
+        float F = evalField(p);
+        if (F < 0.86) discard;
 
-        // Twin pressurized oil streams merging into a thick, irregular asphalt slick
-        // Keep radius <= 0.56 and apply smooth boundary containment so it never clips against plane edges
-        float d1 = length(vec2((p.x - 0.16) * 1.85, p.y * 1.15)) - warp * 0.34;
-        float d2 = length(vec2((p.x + 0.16) * 1.85, p.y * 1.15)) - warp * 0.34;
-        float d = min(d1, d2);
-        float radius = mix(0.05, 0.56, uSpread);
-        float edgeContain = smoothstep(0.98, 0.78, max(abs(p.x), abs(p.y)));
-        float mask = (1.0 - smoothstep(radius - 0.06, radius, d)) * edgeContain;
-        if (mask <= 0.01) discard;
+        // Wet ground staining right around & under the oil contact line
+        if (F < 1.0) {
+          float stain = smoothstep(0.86, 1.0, F) * 0.50;
+          gl_FragColor = vec4(0.008, 0.008, 0.010, stain);
+          return;
+        }
 
-        // View-dependent Fresnel + wet studio softbox specular reflection
+        // Finite-difference gradient of perturbed field for irregular creeping meniscus normals
+        float eps = 0.004;
+        vec2 gradF = vec2(evalField(p + vec2(eps, 0.0)) - F, evalField(p + vec2(0.0, eps)) - F) / eps;
+
+        // High-surface-tension rounded bulging meniscus: steep rise at F=1.0+
+        float excess = clamp(F - 1.0, 0.0, 2.2);
+        float dh_dF = 0.010 / max(0.06, sqrt(excess));
+
+        // Subtle, slow-moving concentric ripples ONLY at the point of impact
+        vec2 impD = p - uImpact.xy;
+        float impDist = length(impD);
+        float impEnv = exp(-impDist * 7.5) * exp(-uImpact.z * 1.4);
+        float ripplePhase = impDist * 46.0 - uImpact.z * 7.5;
+        float rippleSlope = impEnv * cos(ripplePhase) * 0.13;
+        vec2 rippleGrad = (impDist > 0.001) ? (impD / impDist) * rippleSlope : vec2(0.0);
+
+        vec2 totalGrad = gradF * dh_dF + rippleGrad;
+        vec3 N = normalize(vec3(-totalGrad.x, 1.0, -totalGrad.y));
         vec3 V = normalize(cameraPosition - vWorldPos);
-        vec3 N = normalize(vec3((n1 - 0.5) * 0.10, 1.0, (n2 - 0.5) * 0.10));
-        float fresnel = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+        float ndotv = clamp(dot(N, V), 0.0, 1.0);
 
-        vec3 L1 = normalize(vec3(0.20, 0.92, 0.34));
-        float spec1 = pow(max(dot(N, normalize(L1 + V)), 0.0), 76.0);
-        vec3 L2 = normalize(vec3(-0.32, 0.85, -0.42));
-        float spec2 = pow(max(dot(N, normalize(L2 + V)), 0.0), 48.0);
+        // Beer-Lambert depth absorption: thin meniscus edge glows amber/golden-brown, center -> near-black
+        float depth = excess * 1.2;
+        vec3 absorb = exp(-vec3(2.4, 5.4, 12.0) * depth);
+        vec3 thinAmber = vec3(0.68, 0.31, 0.05) * absorb;
+        vec3 deepCenter = vec3(0.012, 0.008, 0.005);
+        vec3 oilBody = mix(deepCenter, thinAmber, exp(-depth * 2.2));
 
-        float film = n1 * 4.0 + fresnel * 2.2 + length(p) * 2.0;
-        vec3 rainbow = 0.5 + 0.5 * cos(film + vec3(0.0, 2.1, 4.2));
-        vec3 baseOil = vec3(0.012, 0.012, 0.014);
-        vec3 col = mix(baseOil, rainbow * 0.22, clamp(fresnel * 0.28 + 0.03, 0.0, 0.16));
-        col += vec3(0.95, 0.97, 1.0) * (spec1 * 0.95 + spec2 * 0.6);
+        // Dielectric Fresnel (IOR ~1.47 -> F0 = 0.0362) & glass-like roughness (0.06) specular
+        float F0 = 0.0362;
+        float fresnel = F0 + (1.0 - F0) * pow(1.0 - ndotv, 5.0);
+        vec3 L1 = normalize(vec3(0.22, 0.92, 0.32));
+        float spec1 = pow(max(dot(N, normalize(L1 + V)), 0.0), 140.0);
+        vec3 L2 = normalize(vec3(-0.35, 0.82, -0.44));
+        float spec2 = pow(max(dot(N, normalize(L2 + V)), 0.0), 80.0);
 
-        gl_FragColor = vec4(col, mask * 0.96 * min(1.0, uSpread * 2.4));
+        vec3 envRefl = vec3(0.90, 0.94, 1.0) * fresnel;
+        vec3 col = oilBody + envRefl + vec3(1.0) * (spec1 * 1.2 + spec2 * 0.6);
+
+        gl_FragColor = vec4(col, 0.98);
       }
     `,
     });
 
-    const oilPuddle = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 5.2), oilPuddleMat);
+    const oilPuddle = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 5.4), oilPuddleMat);
     oilPuddle.rotation.x = -Math.PI / 2;
-    oilPuddle.position.set(0.58, 0.023, -4.10);
+    oilPuddle.position.set(0.60, 0.023, -3.90);
     oilPuddle.renderOrder = 1;
     root.add(oilPuddle);
 
@@ -1211,6 +1284,7 @@ function buildTetraCaltropGeometry(radius = 0.022): THREE.BufferGeometry {
       roofHatchPivot,
       leftOilLampPivot,
       leftOilNozzle,
+      leftOilArms,
       rightCaltropPivot,
       subParts,
       plateAngle: 0,
@@ -1222,12 +1296,15 @@ function buildTetraCaltropGeometry(radius = 0.022): THREE.BufferGeometry {
       caltropLidOpen: 0,
       smokePoints,
       smokeParticles,
-      oilJetMat,
-      oilStreamProg: 0,
-      oilMistPoints,
+      oilBlobInstanced,
+      oilBlobMat,
+      oilFilamentMesh,
+      oilFilamentMat,
       oilDroplets,
+      oilMetaballs,
       oilPuddleMat,
-      oilSpread: 0,
+      oilImpact,
+      oilSpawnAccum: 0,
       caltropInstanced,
       caltrops,
       time: 0,
@@ -1330,58 +1407,120 @@ function buildTetraCaltropGeometry(radius = 0.022): THREE.BufferGeometry {
     seedAttr.needsUpdate = true;
     rotAttr.needsUpdate = true;
 
-    // 5B. Left Taillight Hinge & Continuous Fluid Jet + Soft Mist + Iridescent Puddle
+    // 5B. Left Taillight Hinge & Nozzle-Anchored Viscous Filament -> Deformed Droplets -> Metaball Puddle
     rig.oilLidOpen += ((state.oilSlick ? 1 : 0) - rig.oilLidOpen) * Math.min(1, safeDt * 7.5);
     rig.leftOilLampPivot.rotation.x = rig.oilLidOpen * 1.32; // Lifts top amber lamp ~75° upward
     rig.leftOilNozzle.position.z = -2.165 - rig.oilLidOpen * 0.065;
+    for (const arm of rig.leftOilArms) {
+      arm.visible = rig.oilLidOpen > 0.08;
+      arm.scale.z = Math.max(0.05, rig.oilLidOpen);
+    }
 
-    const jetTarget = state.oilSlick && rig.oilLidOpen > 0.65 ? 1 : 0;
-    rig.oilStreamProg += (jetTarget - rig.oilStreamProg) * Math.min(1, safeDt * (jetTarget ? 2.6 : 4.5));
-    rig.oilJetMat.uniforms.uFlow.value = rig.oilStreamProg;
-    rig.oilJetMat.uniforms.uTime.value = rig.time;
+    const nozzleTipZ = rig.leftOilNozzle.position.z - 0.036;
+    const isSputtering = state.oilSlick && rig.oilLidOpen > 0.65;
+    const sputterPulse = Math.sin(rig.time * 7.8) + 0.55 * Math.sin(rig.time * 18.5);
 
-    const nozzleTipZ = rig.leftOilNozzle.position.z - 0.038;
-    const oilPosAttr = rig.oilMistPoints.geometry.getAttribute('position') as THREE.BufferAttribute;
-    const oilAgeAttr = rig.oilMistPoints.geometry.getAttribute('aAge') as THREE.BufferAttribute;
+    rig.oilBlobMat.uniforms.uTime.value = rig.time;
+    rig.oilFilamentMesh.position.z = nozzleTipZ + 0.012;
+    rig.oilFilamentMat.uniforms.uTime.value = rig.time;
+    rig.oilFilamentMat.uniforms.uActive.value +=
+      ((isSputtering ? 1 : 0) - rig.oilFilamentMat.uniforms.uActive.value) * Math.min(1, safeDt * 9);
+    rig.oilFilamentMat.uniforms.uLength.value = 0.65 + 0.45 * Math.max(0, sputterPulse);
 
-    let oilSpawnBudget = jetTarget ? 4 : 0;
-    for (let i = 0; i < rig.oilDroplets.length; i++) {
-      const d = rig.oilDroplets[i];
-      if (!d.active && oilSpawnBudget > 0) {
-        oilSpawnBudget--;
-        d.active = true;
-        d.age = 0;
-        d.life = 0.85 + Math.random() * 0.35;
-        d.pos.set(
-          0.6325 + (Math.random() - 0.5) * 0.005,
-          0.785 + (Math.random() - 0.5) * 0.005,
-          nozzleTipZ
-        );
-        d.vel.set((Math.random() - 0.5) * 0.16, -0.02 + Math.random() * 0.08, -(1.45 + Math.random() * 0.55));
-      }
-
-      if (d.active) {
-        d.age += safeDt;
-        d.vel.y -= 2.2 * safeDt;
-        d.pos.addScaledVector(d.vel, safeDt);
-        const t = d.age / d.life;
-        if (d.pos.y <= 0.025 || t >= 1) {
-          d.active = false;
-          oilPosAttr.setXYZ(i, 0, -10, 0);
-          oilAgeAttr.setX(i, 1);
-        } else {
-          oilPosAttr.setXYZ(i, d.pos.x, d.pos.y, d.pos.z);
-          oilAgeAttr.setX(i, t);
+    if (isSputtering && sputterPulse > -0.25) {
+      rig.oilSpawnAccum += safeDt;
+      if (rig.oilSpawnAccum >= 0.034) {
+        rig.oilSpawnAccum = 0;
+        const slot = rig.oilDroplets.find((d) => !d.active);
+        if (slot) {
+          slot.active = true;
+          slot.age = 0;
+          slot.life = 1.25;
+          slot.radius = 0.0055 + Math.random() * 0.0042;
+          slot.pos.set(
+            0.6325 + (Math.random() - 0.5) * 0.003,
+            0.785 + (Math.random() - 0.5) * 0.003,
+            nozzleTipZ - 0.08
+          );
+          const jetSpeed = 1.20 + 0.45 * Math.max(0, sputterPulse) + Math.random() * 0.25;
+          slot.vel.set((Math.random() - 0.5) * 0.09, 0.02 + Math.random() * 0.07, -jetSpeed);
         }
-      } else {
-        oilPosAttr.setXYZ(i, 0, -10, 0);
       }
     }
-    oilPosAttr.needsUpdate = true;
-    oilAgeAttr.needsUpdate = true;
 
-    rig.oilSpread += ((state.oilSlick ? 1 : 0) - rig.oilSpread) * Math.min(1, safeDt * (state.oilSlick ? 1.8 : 0.8));
-    rig.oilPuddleMat.uniforms.uSpread.value = rig.oilSpread;
+    rig.oilImpact.z += safeDt;
+
+    for (let i = 0; i < rig.oilDroplets.length; i++) {
+      const d = rig.oilDroplets[i];
+      if (d.active) {
+        d.age += safeDt;
+        d.vel.y -= 3.8 * safeDt;
+        d.pos.addScaledVector(d.vel, safeDt);
+        if (d.pos.y <= 0.025 || d.age >= d.life) {
+          if (d.pos.y <= 0.025) {
+            rig.oilImpact.set(d.pos.x, d.pos.z, 0);
+            let merged = false;
+            for (const mb of rig.oilMetaballs) {
+              if (mb.active && Math.hypot(mb.x - d.pos.x, mb.z - d.pos.z) < 0.14) {
+                mb.r = Math.min(0.28, Math.hypot(mb.r, d.radius * 3.2));
+                mb.vx += (Math.random() - 0.5) * 0.05;
+                mb.vz -= 0.035;
+                merged = true;
+                break;
+              }
+            }
+            if (!merged) {
+              const freeMb = rig.oilMetaballs.find((m) => !m.active);
+              if (freeMb) {
+                freeMb.active = true;
+                freeMb.x = d.pos.x;
+                freeMb.z = d.pos.z;
+                freeMb.vx = (Math.random() - 0.5) * 0.08;
+                freeMb.vz = -0.07 - Math.random() * 0.06;
+                freeMb.r = 0.055 + Math.random() * 0.025;
+              }
+            }
+          }
+          d.active = false;
+          _dummyObj.position.set(0, -10, 0);
+          _dummyObj.scale.setScalar(0.0001);
+        } else {
+          _dummyObj.position.copy(d.pos);
+          _dummyObj.lookAt(d.pos.clone().add(d.vel));
+          const speed = d.vel.length();
+          _dummyObj.scale.set(d.radius, d.radius, d.radius * (1.15 + Math.min(0.65, speed * 0.25)));
+        }
+      } else {
+        _dummyObj.position.set(0, -10, 0);
+        _dummyObj.scale.setScalar(0.0001);
+      }
+      _dummyObj.updateMatrix();
+      rig.oilBlobInstanced.setMatrixAt(i, _dummyObj.matrix);
+    }
+    rig.oilBlobInstanced.instanceMatrix.needsUpdate = true;
+
+    // Slowly creeping high-viscosity damped metaballs on the ground
+    const ballUniforms = rig.oilPuddleMat.uniforms.uBalls.value as THREE.Vector4[];
+    const damp = Math.exp(-4.2 * safeDt);
+    for (let i = 0; i < rig.oilMetaballs.length; i++) {
+      const mb = rig.oilMetaballs[i];
+      if (mb.active) {
+        mb.vx *= damp;
+        mb.vz *= damp;
+        mb.x += mb.vx * safeDt;
+        mb.z += mb.vz * safeDt;
+        if (!state.oilSlick) {
+          mb.r -= 0.045 * safeDt;
+          if (mb.r <= 0.002) {
+            mb.active = false;
+            mb.r = 0;
+          }
+        }
+        ballUniforms[i].set(mb.x, mb.z, mb.r, 0);
+      } else {
+        ballUniforms[i].set(0, -10, 0, 0);
+      }
+    }
     rig.oilPuddleMat.uniforms.uTime.value = rig.time;
 
     // 5C. Right Taillight Hinge & 4-Sided Steel Caltrop Dispenser
