@@ -612,6 +612,7 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
                 normalScale: m.normalScale ? m.normalScale.clone() : new THREE.Vector2(1, 1),
                 aoMap: m.aoMap,
                 aoMapIntensity: m.aoMapIntensity,
+                side: m.side,
               });
               return silverBirch;
             }
@@ -851,12 +852,8 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
           if (n.includes('sk_trunk_101')) trunkMeshes.push(obj);
           if (n.includes('sm_light_b_101')) rearLightMeshes.push(obj);
           if (
-            (n.includes('sm_roof_101') && (n.includes('013_db5') || n.includes('011_db5'))) ||
-            (n.includes('sm_body_101') &&
-              (n.includes('006_db5') ||
-                n.includes('cabin1_0') ||
-                n.includes('leather_c1') ||
-                n.includes('leather_b1')))
+            (n.includes('sm_roof_101') && n.includes('013_db5')) ||
+            (n.includes('sm_body_101') && n.includes('leather_c1'))
           ) {
             roofHatchSourceMeshes.push(obj);
           }
@@ -876,11 +873,20 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
           }
         }
 
-        // Helper to split a mesh into kept static triangles vs extracted world-space sub-mesh centered at `pivot`
-        const splitMeshByPredicate = (
+        /**
+         * Exact triangle-level rounded-rectangle clipper: splits straddling triangles
+         * along the smooth SDF boundary so both the roof cutout and extracted panel
+         * have razor-clean edges and rounded corners with zero sawtooth jaggies.
+         */
+        const clipMeshByRoundedRect = (
           srcMesh: THREE.Mesh,
           pivot: THREE.Vector3,
-          predicate: (cx: number, cy: number, cz: number, v0: THREE.Vector3, v1: THREE.Vector3, v2: THREE.Vector3) => boolean
+          minX: number,
+          maxX: number,
+          minZ: number,
+          maxZ: number,
+          cornerR: number,
+          minY: number
         ): THREE.Mesh | null => {
           const geo = srcMesh.geometry;
           const posAttr = geo.attributes.position;
@@ -888,51 +894,340 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
           const uvAttr = geo.attributes.uv;
           if (!posAttr) return null;
 
+          srcMesh.updateMatrixWorld(true);
+          const invWorld = srcMesh.matrixWorld.clone().invert();
           const normalMat = new THREE.Matrix3().getNormalMatrix(srcMesh.matrixWorld);
-          const v0 = new THREE.Vector3();
-          const v1 = new THREE.Vector3();
-          const v2 = new THREE.Vector3();
-          const nTmp = new THREE.Vector3();
+          const invNormalMat = normalMat.clone().invert();
 
-          const extractedTris: Array<[number, number, number]> = [];
-          const keptIdx: number[] = [];
+          const cx = (minX + maxX) * 0.5;
+          const cz = (minZ + maxZ) * 0.5;
+          const hw = (maxX - minX) * 0.5;
+          const hz = (maxZ - minZ) * 0.5;
+          const r = Math.min(cornerR, hw * 0.8, hz * 0.8);
+
+          const sdRect = (x: number, z: number): number => {
+            const dx = Math.abs(x - cx) - (hw - r);
+            const dz = Math.abs(z - cz) - (hz - r);
+            return Math.hypot(Math.max(dx, 0), Math.max(dz, 0)) + Math.min(Math.max(dx, dz), 0) - r;
+          };
+
+          interface ClipVert {
+            pos: THREE.Vector3;
+            norm: THREE.Vector3;
+            uv: THREE.Vector2;
+          }
+
+          const readVert = (vi: number): ClipVert => ({
+            pos: new THREE.Vector3().fromBufferAttribute(posAttr, vi).applyMatrix4(srcMesh.matrixWorld),
+            norm: normAttr
+              ? new THREE.Vector3().fromBufferAttribute(normAttr, vi).applyMatrix3(normalMat).normalize()
+              : new THREE.Vector3(0, 1, 0),
+            uv: uvAttr
+              ? new THREE.Vector2(uvAttr.getX(vi), uvAttr.getY(vi))
+              : new THREE.Vector2(),
+          });
+
+          const intersectEdge = (a: ClipVert, da: number, b: ClipVert, db: number): ClipVert => {
+            let lo = 0;
+            let hi = 1;
+            let t = THREE.MathUtils.clamp(da / (da - db), 0, 1);
+            // 4 bisection steps refine exact intersection on curved corners
+            for (let k = 0; k < 4; k++) {
+              const px = THREE.MathUtils.lerp(a.pos.x, b.pos.x, t);
+              const pz = THREE.MathUtils.lerp(a.pos.z, b.pos.z, t);
+              const d = sdRect(px, pz);
+              if (Math.abs(d) < 1e-5) break;
+              if ((d < 0) === (da < 0)) {
+                lo = t;
+              } else {
+                hi = t;
+              }
+              t = 0.5 * (lo + hi);
+            }
+            return {
+              pos: a.pos.clone().lerp(b.pos, t),
+              norm: a.norm.clone().lerp(b.norm, t).normalize(),
+              uv: a.uv.clone().lerp(b.uv, t),
+            };
+          };
+
+          const outerTris: Array<[ClipVert, ClipVert, ClipVert]> = [];
+          const innerTris: Array<[ClipVert, ClipVert, ClipVert]> = [];
           const triCount = geo.index ? geo.index.count / 3 : posAttr.count / 3;
+
+          const midVert = (a: ClipVert, b: ClipVert): ClipVert => ({
+            pos: a.pos.clone().lerp(b.pos, 0.5),
+            norm: a.norm.clone().lerp(b.norm, 0.5).normalize(),
+            uv: a.uv.clone().lerp(b.uv, 0.5),
+          });
+
+          // Adaptive 1-to-4 subdivision near the SDF boundary so curved corners clip CNC-smooth
+          const processTri = (v0: ClipVert, v1: ClipVert, v2: ClipVert, depth: number) => {
+            const avgY = (v0.pos.y + v1.pos.y + v2.pos.y) / 3;
+            if (avgY < minY) {
+              outerTris.push([v0, v1, v2]);
+              return;
+            }
+
+            const d0 = sdRect(v0.pos.x, v0.pos.z);
+            const d1 = sdRect(v1.pos.x, v1.pos.z);
+            const d2 = sdRect(v2.pos.x, v2.pos.z);
+
+            const in0 = d0 < 0;
+            const in1 = d1 < 0;
+            const in2 = d2 < 0;
+            const straddles = !(in0 && in1 && in2) && (in0 || in1 || in2);
+            const nearBoundary = Math.min(Math.abs(d0), Math.abs(d1), Math.abs(d2)) < 0.09;
+
+            if (depth > 0 && (straddles || nearBoundary)) {
+              const m01 = midVert(v0, v1);
+              const m12 = midVert(v1, v2);
+              const m20 = midVert(v2, v0);
+              processTri(v0, m01, m20, depth - 1);
+              processTri(m01, v1, m12, depth - 1);
+              processTri(m20, m12, v2, depth - 1);
+              processTri(m01, m12, m20, depth - 1);
+              return;
+            }
+
+            if (in0 && in1 && in2) {
+              innerTris.push([v0, v1, v2]);
+            } else if (!in0 && !in1 && !in2) {
+              outerTris.push([v0, v1, v2]);
+            } else {
+              // Rotate vertices so vA is the lone vertex on its side of the boundary
+              const verts: [ClipVert, ClipVert, ClipVert] = [v0, v1, v2];
+              const dists: [number, number, number] = [d0, d1, d2];
+              const ins: [boolean, boolean, boolean] = [in0, in1, in2];
+              const inCount = (in0 ? 1 : 0) + (in1 ? 1 : 0) + (in2 ? 1 : 0);
+              const loneIsIn = inCount === 1;
+              let loneIdx = 0;
+              for (let k = 0; k < 3; k++) {
+                if (ins[k] === loneIsIn) {
+                  loneIdx = k;
+                  break;
+                }
+              }
+              const vA = verts[loneIdx];
+              const vB = verts[(loneIdx + 1) % 3];
+              const vC = verts[(loneIdx + 2) % 3];
+              const dA = dists[loneIdx];
+              const dB = dists[(loneIdx + 1) % 3];
+              const dC = dists[(loneIdx + 2) % 3];
+
+              const pAB = intersectEdge(vA, dA, vB, dB);
+              const pAC = intersectEdge(vA, dA, vC, dC);
+
+              if (loneIsIn) {
+                innerTris.push([vA, pAB, pAC]);
+                outerTris.push([pAB, vB, vC]);
+                outerTris.push([pAB, vC, pAC]);
+              } else {
+                outerTris.push([vA, pAB, pAC]);
+                innerTris.push([pAB, vB, vC]);
+                innerTris.push([pAB, vC, pAC]);
+              }
+            }
+          };
 
           for (let t = 0; t < triCount; t++) {
             const i0 = geo.index ? geo.index.getX(t * 3) : t * 3;
             const i1 = geo.index ? geo.index.getX(t * 3 + 1) : t * 3 + 1;
             const i2 = geo.index ? geo.index.getX(t * 3 + 2) : t * 3 + 2;
-            v0.fromBufferAttribute(posAttr, i0).applyMatrix4(srcMesh.matrixWorld);
-            v1.fromBufferAttribute(posAttr, i1).applyMatrix4(srcMesh.matrixWorld);
-            v2.fromBufferAttribute(posAttr, i2).applyMatrix4(srcMesh.matrixWorld);
-            const cx = (v0.x + v1.x + v2.x) / 3;
-            const cy = (v0.y + v1.y + v2.y) / 3;
-            const cz = (v0.z + v1.z + v2.z) / 3;
-            if (predicate(cx, cy, cz, v0, v1, v2)) {
-              extractedTris.push([i0, i1, i2]);
+            processTri(readVert(i0), readVert(i1), readVert(i2), 3);
+          }
+
+          if (innerTris.length === 0) return null;
+
+          // Rebuild outer mesh in srcMesh local space
+          const outP = new Float32Array(outerTris.length * 9);
+          const outN = normAttr ? new Float32Array(outerTris.length * 9) : null;
+          const outU = uvAttr ? new Float32Array(outerTris.length * 6) : null;
+          const localP = new THREE.Vector3();
+          const localN = new THREE.Vector3();
+          let oi = 0;
+          let ou = 0;
+          for (const tri of outerTris) {
+            for (const cv of tri) {
+              localP.copy(cv.pos).applyMatrix4(invWorld);
+              outP[oi] = localP.x;
+              outP[oi + 1] = localP.y;
+              outP[oi + 2] = localP.z;
+              if (outN) {
+                localN.copy(cv.norm).applyMatrix3(invNormalMat).normalize();
+                outN[oi] = localN.x;
+                outN[oi + 1] = localN.y;
+                outN[oi + 2] = localN.z;
+              }
+              if (outU) {
+                outU[ou] = cv.uv.x;
+                outU[ou + 1] = cv.uv.y;
+                ou += 2;
+              }
+              oi += 3;
+            }
+          }
+          const newOuterGeo = new THREE.BufferGeometry();
+          newOuterGeo.setAttribute('position', new THREE.BufferAttribute(outP, 3));
+          if (outN) newOuterGeo.setAttribute('normal', new THREE.BufferAttribute(outN, 3));
+          if (outU) {
+            newOuterGeo.setAttribute('uv', new THREE.BufferAttribute(outU, 2));
+            newOuterGeo.setAttribute('uv2', new THREE.BufferAttribute(outU, 2));
+          }
+          newOuterGeo.computeBoundingSphere();
+          srcMesh.geometry.dispose();
+          srcMesh.geometry = newOuterGeo;
+
+          // Build inner panel mesh centered at pivot
+          // If srcMesh has a negative matrixWorld determinant (mirrored scale), flip triangle winding (1 <-> 2)
+          // so world-space triangles keep their true outward front-face winding!
+          const flipWinding = srcMesh.matrixWorld.determinant() < 0;
+          const inP = new Float32Array(innerTris.length * 9);
+          const inN = normAttr ? new Float32Array(innerTris.length * 9) : null;
+          const inU = uvAttr ? new Float32Array(innerTris.length * 6) : null;
+          let ii = 0;
+          let iu = 0;
+          for (const tri of innerTris) {
+            const ordered: [ClipVert, ClipVert, ClipVert] = flipWinding
+              ? [tri[0], tri[2], tri[1]]
+              : tri;
+            for (const cv of ordered) {
+              inP[ii] = cv.pos.x - pivot.x;
+              inP[ii + 1] = cv.pos.y - pivot.y;
+              inP[ii + 2] = cv.pos.z - pivot.z;
+              if (inN) {
+                inN[ii] = cv.norm.x;
+                inN[ii + 1] = cv.norm.y;
+                inN[ii + 2] = cv.norm.z;
+              }
+              if (inU) {
+                inU[iu] = cv.uv.x;
+                inU[iu + 1] = cv.uv.y;
+                iu += 2;
+              }
+              ii += 3;
+            }
+          }
+          const innerGeo = new THREE.BufferGeometry();
+          innerGeo.setAttribute('position', new THREE.BufferAttribute(inP, 3));
+          if (inN) innerGeo.setAttribute('normal', new THREE.BufferAttribute(inN, 3));
+          if (inU) {
+            innerGeo.setAttribute('uv', new THREE.BufferAttribute(inU, 2));
+            innerGeo.setAttribute('uv2', new THREE.BufferAttribute(inU, 2));
+          }
+          innerGeo.computeBoundingSphere();
+          const mat = Array.isArray(srcMesh.material)
+            ? srcMesh.material.map((m) => m.clone())
+            : srcMesh.material.clone();
+          return new THREE.Mesh(innerGeo, mat);
+        };
+
+        /**
+         * Extracts whole connected mesh components belonging to the front passenger bucket seat
+         * so no backrest or cushion triangles are ever jaggedly sliced.
+         */
+        const extractSeatByComponents = (
+          srcMesh: THREE.Mesh,
+          pivot: THREE.Vector3
+        ): THREE.Mesh | null => {
+          const geo = srcMesh.geometry;
+          const posAttr = geo.attributes.position;
+          const normAttr = geo.attributes.normal;
+          const uvAttr = geo.attributes.uv;
+          if (!posAttr) return null;
+
+          srcMesh.updateMatrixWorld(true);
+          const normalMat = new THREE.Matrix3().getNormalMatrix(srcMesh.matrixWorld);
+          const triCount = geo.index ? geo.index.count / 3 : posAttr.count / 3;
+
+          // Build vertex-to-vertex adjacency across triangles
+          const vCount = posAttr.count;
+          const adj: number[][] = Array.from({ length: vCount }, () => []);
+          for (let t = 0; t < triCount; t++) {
+            const a = geo.index ? geo.index.getX(t * 3) : t * 3;
+            const b = geo.index ? geo.index.getX(t * 3 + 1) : t * 3 + 1;
+            const c = geo.index ? geo.index.getX(t * 3 + 2) : t * 3 + 2;
+            adj[a].push(b, c);
+            adj[b].push(a, c);
+            adj[c].push(a, b);
+          }
+
+          const compId = new Int32Array(vCount).fill(-1);
+          const compIsPassengerSeat: boolean[] = [];
+          const vTmp = new THREE.Vector3();
+          let cIdx = 0;
+
+          for (let i = 0; i < vCount; i++) {
+            if (compId[i] !== -1) continue;
+            const queue = [i];
+            compId[i] = cIdx;
+            let minX = Infinity, maxX = -Infinity;
+            let minY = Infinity, maxY = -Infinity;
+            let minZ = Infinity, maxZ = -Infinity;
+            let head = 0;
+            while (head < queue.length) {
+              const u = queue[head++];
+              vTmp.fromBufferAttribute(posAttr, u).applyMatrix4(srcMesh.matrixWorld);
+              if (vTmp.x < minX) minX = vTmp.x;
+              if (vTmp.x > maxX) maxX = vTmp.x;
+              if (vTmp.y < minY) minY = vTmp.y;
+              if (vTmp.y > maxY) maxY = vTmp.y;
+              if (vTmp.z < minZ) minZ = vTmp.z;
+              if (vTmp.z > maxZ) maxZ = vTmp.z;
+              for (const w of adj[u]) {
+                if (compId[w] === -1) {
+                  compId[w] = cIdx;
+                  queue.push(w);
+                }
+              }
+            }
+            const isSeat =
+              minX > 0.04 &&
+              maxX < 0.63 &&
+              minY > 0.30 &&
+              maxY < 0.96 &&
+              minZ > -0.505 &&
+              maxZ < 0.30;
+            compIsPassengerSeat.push(isSeat);
+            cIdx++;
+          }
+
+          const extractedTris: Array<[number, number, number]> = [];
+          const keptIdx: number[] = [];
+          for (let t = 0; t < triCount; t++) {
+            const a = geo.index ? geo.index.getX(t * 3) : t * 3;
+            const b = geo.index ? geo.index.getX(t * 3 + 1) : t * 3 + 1;
+            const c = geo.index ? geo.index.getX(t * 3 + 2) : t * 3 + 2;
+            if (compIsPassengerSeat[compId[a]]) {
+              extractedTris.push([a, b, c]);
             } else {
-              keptIdx.push(i0, i1, i2);
+              keptIdx.push(a, b, c);
             }
           }
 
           if (extractedTris.length === 0) return null;
 
+          const flipSeatWinding = srcMesh.matrixWorld.determinant() < 0;
           const outPos = new Float32Array(extractedTris.length * 9);
           const outNorm = normAttr ? new Float32Array(extractedTris.length * 9) : null;
           const outUv = uvAttr ? new Float32Array(extractedTris.length * 6) : null;
+          const nTmp2 = new THREE.Vector3();
           let pIdx = 0;
           let uIdx = 0;
           for (const tri of extractedTris) {
-            for (const vi of tri) {
-              v0.fromBufferAttribute(posAttr, vi).applyMatrix4(srcMesh.matrixWorld).sub(pivot);
-              outPos[pIdx] = v0.x;
-              outPos[pIdx + 1] = v0.y;
-              outPos[pIdx + 2] = v0.z;
+            const ordered: [number, number, number] = flipSeatWinding
+              ? [tri[0], tri[2], tri[1]]
+              : tri;
+            for (const vi of ordered) {
+              vTmp.fromBufferAttribute(posAttr, vi).applyMatrix4(srcMesh.matrixWorld).sub(pivot);
+              outPos[pIdx] = vTmp.x;
+              outPos[pIdx + 1] = vTmp.y;
+              outPos[pIdx + 2] = vTmp.z;
               if (outNorm && normAttr) {
-                nTmp.fromBufferAttribute(normAttr, vi).applyMatrix3(normalMat).normalize();
-                outNorm[pIdx] = nTmp.x;
-                outNorm[pIdx + 1] = nTmp.y;
-                outNorm[pIdx + 2] = nTmp.z;
+                nTmp2.fromBufferAttribute(normAttr, vi).applyMatrix3(normalMat).normalize();
+                outNorm[pIdx] = nTmp2.x;
+                outNorm[pIdx + 1] = nTmp2.y;
+                outNorm[pIdx + 2] = nTmp2.z;
               }
               if (outUv && uvAttr) {
                 outUv[uIdx] = uvAttr.getX(vi);
@@ -957,70 +1252,42 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
           return new THREE.Mesh(newGeo, mat);
         };
 
-        // Raycast roof surface profile BEFORE carving the passenger roof hatch opening
+        // Exact per-point raycast against roofOuterMeshes BEFORE carving the opening (0.0mm height error)
         const roofOuterMeshes = roofHatchSourceMeshes.filter((m) =>
           m.name.toLowerCase().includes('sm_roof_101')
         );
-        const roofGridN = 14;
-        const roofHeights: number[][] = [];
-        for (let ix = 0; ix <= roofGridN; ix++) {
-          const row: number[] = [];
-          const rx = -0.02 + (ix / roofGridN) * 0.62;
-          for (let iz = 0; iz <= roofGridN; iz++) {
-            const rz = -0.56 + (iz / roofGridN) * 0.70;
-            trunkRay.set(new THREE.Vector3(rx, 1.6, rz), trunkDown);
-            const hits = trunkRay.intersectObjects(roofOuterMeshes, false);
-            row.push(
-              hits.length > 0
-                ? hits[0].point.y
-                : 1.380 - 0.14 * rx * rx - 0.08 * (rz + 0.18) * (rz + 0.18)
-            );
-          }
-          roofHeights.push(row);
-        }
         const roofSurfaceY = (x: number, z: number): number => {
-          const ux = THREE.MathUtils.clamp((x - -0.02) / 0.62, 0, 1) * roofGridN;
-          const uz = THREE.MathUtils.clamp((z - -0.56) / 0.70, 0, 1) * roofGridN;
-          const ix0 = Math.floor(ux);
-          const iz0 = Math.floor(uz);
-          const ix1 = Math.min(roofGridN, ix0 + 1);
-          const iz1 = Math.min(roofGridN, iz0 + 1);
-          const fx = ux - ix0;
-          const fz = uz - iz0;
-          const y00 = roofHeights[ix0][iz0];
-          const y10 = roofHeights[ix1][iz0];
-          const y01 = roofHeights[ix0][iz1];
-          const y11 = roofHeights[ix1][iz1];
-          return (
-            y00 * (1 - fx) * (1 - fz) +
-            y10 * fx * (1 - fz) +
-            y01 * (1 - fx) * fz +
-            y11 * fx * fz
-          );
+          trunkRay.set(new THREE.Vector3(x, 1.65, z), trunkDown);
+          const hits = trunkRay.intersectObjects(roofOuterMeshes, false);
+          if (hits.length > 0) return hits[0].point.y;
+          return 1.380 - 0.14 * x * x - 0.08 * (z + 0.18) * (z + 0.18);
         };
 
-        // Extract full passenger-side roof panel & all inner headliner/trim layers (x ∈ [0.005, 0.565], z ∈ [-0.520, +0.095])
-        // Sized wider & longer than the bucket seat so seat + passenger eject cleanly with zero metal clash
-        const roofPanelCenter = new THREE.Vector3(0.285, roofSurfaceY(0.285, -0.2125), -0.2125);
+        // Extract passenger-side roof panel & inner headliner using exact SDF triangle clipping
+        // Bounds stay strictly inside the top roof deck (x ∈ [0.020, 0.440], z ∈ [-0.435, +0.055], r = 0.055)
+        const roofPanelCenter = new THREE.Vector3(0.230, roofSurfaceY(0.230, -0.190), -0.190);
         const roofPanelMeshes: THREE.Mesh[] = [];
         for (const rMesh of roofHatchSourceMeshes) {
-          const extracted = splitMeshByPredicate(
+          const isOuterRoof = rMesh.name.toLowerCase().includes('sm_roof_101');
+          const extracted = clipMeshByRoundedRect(
             rMesh,
             roofPanelCenter,
-            (cx, cy, cz) => cy > 1.19 && cx > 0.005 && cx < 0.565 && cz > -0.520 && cz < 0.095
+            0.020,
+            0.440,
+            -0.435,
+            0.055,
+            0.055,
+            1.25
           );
-          if (extracted) roofPanelMeshes.push(extracted);
+          // Only attach the outer Silver Birch roof panel to roofHatchGroup so the tan headliner never shows or z-fights from outside
+          if (extracted && isOuterRoof) roofPanelMeshes.push(extracted);
         }
 
-        // Extract ONLY the front passenger bucket seat (cushion + backrest, no floor rails/rear bench/extras)
-        const passengerSeatCenter = new THREE.Vector3(0.32, 0.56, -0.14);
+        // Extract ONLY whole connected components of the front passenger bucket seat (zero jagged backrest cuts)
+        const passengerSeatCenter = new THREE.Vector3(0.33, 0.56, -0.14);
         const passengerSeatMeshes: THREE.Mesh[] = [];
         for (const sMesh of passengerSeatSourceMeshes) {
-          const extracted = splitMeshByPredicate(
-            sMesh,
-            passengerSeatCenter,
-            (cx, cy, cz) => cx > 0.075 && cx < 0.59 && cy > 0.31 && cy < 0.96 && cz > -0.42 && cz < 0.30
-          );
+          const extracted = extractSeatByComponents(sMesh, passengerSeatCenter);
           if (extracted) passengerSeatMeshes.push(extracted);
         }
 
@@ -1042,6 +1309,7 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
           const v2 = new THREE.Vector3();
           const nTmp = new THREE.Vector3();
 
+          const flipLightWinding = lightMesh.matrixWorld.determinant() < 0;
           const buildExtractedMesh = (tris: Array<[number, number, number]>, pivot: THREE.Vector3): THREE.Mesh | null => {
             if (tris.length === 0) return null;
             const outPos = new Float32Array(tris.length * 9);
@@ -1050,7 +1318,10 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
             let pIdx = 0;
             let uIdx = 0;
             for (const tri of tris) {
-              for (const vi of tri) {
+              const ordered: [number, number, number] = flipLightWinding
+                ? [tri[0], tri[2], tri[1]]
+                : tri;
+              for (const vi of ordered) {
                 v0.fromBufferAttribute(posAttr, vi).applyMatrix4(lightMesh.matrixWorld).sub(pivot);
                 outPos[pIdx] = v0.x;
                 outPos[pIdx + 1] = v0.y;

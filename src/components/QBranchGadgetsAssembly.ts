@@ -76,8 +76,6 @@ export interface QBranchGadgetsRig {
   roofHatchBasePos: THREE.Vector3;
   passengerSeatGroup: THREE.Group;
   passengerSeatBasePos: THREE.Vector3;
-  ejectAirPoints: THREE.Points;
-  ejectAirParticles: SmokeParticle[];
   leftOilLampPivot: THREE.Group;
   leftOilNozzle: THREE.Mesh;
   leftOilArms: THREE.Mesh[];
@@ -197,6 +195,53 @@ function createPlateTexture(variant: 0 | 1 | 2): THREE.CanvasTexture {
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 8;
+  return tex;
+}
+
+/** Generates a Q-Branch hazard stencil texture for the underside of the ejector roof hatch. */
+function createRoofHatchUndersideTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#181a20';
+  ctx.fillRect(0, 0, 512, 512);
+
+  // Diagonal hazard stripes along edges
+  ctx.fillStyle = '#eab308';
+  for (let i = -512; i < 1024; i += 48) {
+    ctx.beginPath();
+    ctx.moveTo(i, 0);
+    ctx.lineTo(i + 24, 0);
+    ctx.lineTo(i - 16, 40);
+    ctx.lineTo(i - 40, 40);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(i, 472);
+    ctx.lineTo(i + 24, 472);
+    ctx.lineTo(i - 16, 512);
+    ctx.lineTo(i - 40, 512);
+    ctx.fill();
+  }
+
+  ctx.strokeStyle = '#ef4444';
+  ctx.lineWidth = 6;
+  ctx.strokeRect(32, 62, 448, 388);
+
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = 'bold 34px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('Q-BRANCH MK.IV', 256, 200);
+  ctx.fillStyle = '#ef4444';
+  ctx.font = 'bold 42px sans-serif';
+  ctx.fillText('DANGER: EJECTOR HATCH', 256, 265);
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = 'bold 24px monospace';
+  ctx.fillText('PYROTECHNIC RELEASE LOCK', 256, 325);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
 
@@ -614,11 +659,11 @@ export function createQBranchGadgetsRig(
   // =========================================================================
   // 4. PASSENGER EJECTOR SEAT & JETTISONABLE ROOF PANEL (RHD: Passenger = +X)
   // =========================================================================
-  // Full passenger-side roof opening (wider & longer than the bucket seat for zero metal clash)
-  const HATCH_MIN_X = 0.005;
-  const HATCH_MAX_X = 0.565;
-  const HATCH_MIN_Z = -0.520;
-  const HATCH_MAX_Z = 0.095;
+  // Full passenger-side roof opening matching clipMeshByRoundedRect (x ∈ [0.020, 0.440], z ∈ [-0.435, +0.055], corner radius = 0.055)
+  const HATCH_MIN_X = 0.020;
+  const HATCH_MAX_X = 0.440;
+  const HATCH_MIN_Z = -0.435;
+  const HATCH_MAX_Z = 0.055;
   const HATCH_CX = (HATCH_MIN_X + HATCH_MAX_X) * 0.5;
   const HATCH_CZ = (HATCH_MIN_Z + HATCH_MAX_Z) * 0.5;
   const HATCH_HW = (HATCH_MAX_X - HATCH_MIN_X) * 0.5;
@@ -685,22 +730,50 @@ export function createQBranchGadgetsRig(
     return geo;
   };
 
-  // Recessed perimeter weatherstrip & channel lip (tucked below outer Silver Birch skin so closed roof is 100% flush & seamless)
-  const roofSealGeo = buildRoofOpeningRingGeo(0.006, -0.010, -0.0025, -0.022, 0.044, 72);
+  // Minimal, ultra-fine 1.2mm recessed shut-line groove (uniform around all 360° when closed, zero poking ridges)
+  const shutLineGeo = buildRoofOpeningRingGeo(0.0006, -0.0006, -0.0002, -0.008, 0.055, 256);
+  const shutLineMesh = new THREE.Mesh(shutLineGeo, rubberPadMat);
+  root.add(shutLineMesh);
+
+  // Rolled Silver Birch machined bevel collar around the cutout lip (revealed cleanly when panel opens)
+  const outerBevelGeo = buildRoofOpeningRingGeo(0.003, -0.008, -0.0002, -0.014, 0.055, 256);
+  const outerBevelMesh = new THREE.Mesh(outerBevelGeo, silverBirchMat);
+  outerBevelMesh.visible = false;
+  root.add(outerBevelMesh);
+
+  // Recessed perimeter weatherstrip & channel lip (hidden when closed so it never peeks at steep corners)
+  const roofSealGeo = buildRoofOpeningRingGeo(-0.003, -0.015, -0.003, -0.022, 0.055, 256);
   const roofSealMesh = register(
     new THREE.Mesh(roofSealGeo, rubberPadMat),
-    'Ejector Roof Opening Weatherstrip',
-    'Recessed Neoprene Perimeter Seal',
-    'Recessed perimeter seal lining the passenger roof cutout, revealed only once the roof panel jettisons.',
+    'Ejector Roof Opening Weatherstrip & Flange',
+    'Molded Neoprene & Anodized Channel',
+    'Flush perimeter weatherstrip and inner roof recess rim with quick-release guide pins.',
     [0.25, 1.15, -0.15]
   );
   root.add(roofSealMesh);
 
-  const innerFlangeGeo = buildRoofOpeningRingGeo(-0.006, -0.016, -0.004, -0.024, 0.042, 64);
+  const innerFlangeGeo = buildRoofOpeningRingGeo(-0.010, -0.020, -0.007, -0.025, 0.055, 256);
   const innerFlangeMesh = new THREE.Mesh(innerFlangeGeo, gunmetalMat);
   root.add(innerFlangeMesh);
 
-  // Jettisonable Roof Panel Group (extracted live from SM_Roof_101 + headliner so it sits 100% flush & seamless when closed)
+  // Chrome quick-release alignment pins & spring latch sockets along the inner lip (matches reference photo)
+  const pinCoords: Array<[number, number]> = [
+    [HATCH_CX - 0.10, HATCH_MAX_Z - 0.012],
+    [HATCH_CX + 0.10, HATCH_MAX_Z - 0.012],
+    [HATCH_MIN_X + 0.012, HATCH_CZ - 0.01],
+    [HATCH_MAX_X - 0.012, HATCH_CZ - 0.01],
+  ];
+  for (const [px, pz] of pinCoords) {
+    const py = sampleRoofY(px, pz) - 0.007;
+    const pinBase = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.007, 12), chromeMat);
+    pinBase.position.set(px, py, pz);
+    root.add(pinBase);
+    const pinTip = new THREE.Mesh(new THREE.CylinderGeometry(0.002, 0.003, 0.009, 10), chromeMat);
+    pinTip.position.set(px, py + 0.0045, pz);
+    root.add(pinTip);
+  }
+
+  // Jettisonable Roof Panel Group (extracted live from SM_Roof_101 so it sits 100% flush & seamless when closed)
   const roofHatchBasePos = ejectorExtract?.roofPanelCenter
     ? ejectorExtract.roofPanelCenter.clone()
     : new THREE.Vector3(HATCH_CX, sampleRoofY(HATCH_CX, HATCH_CZ), HATCH_CZ);
@@ -714,26 +787,33 @@ export function createQBranchGadgetsRig(
         rm,
         'Jettisonable Passenger Roof Panel',
         'Silver Birch Aluminum Roof Section',
-        'Flush passenger-side roof panel sheared cleanly by pneumatic bolts prior to compressed-air seat ejection.',
+        'Pop-off passenger roof panel released by explosive spring bolts prior to seat ejection.',
         [0.45, 1.45, -0.15]
       );
       roofHatchGroup.add(rm);
     }
   } else {
     const fallbackHatch = register(
-      new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.014, 0.61), silverBirchMat),
+      new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.014, 0.49), silverBirchMat),
       'Jettisonable Passenger Roof Panel',
       'Silver Birch Aluminum Roof Section',
-      'Flush passenger-side roof panel sheared cleanly by pneumatic bolts prior to compressed-air seat ejection.',
+      'Pop-off passenger roof panel released by explosive spring bolts prior to seat ejection.',
       [0.45, 1.45, -0.15]
     );
     roofHatchGroup.add(fallbackHatch);
   }
 
-  // Passenger Ejector Seat Group (minimal bucket seat + compact tucked-in compressed-air base)
+  // Finished machined Silver Birch edge skirt on the jettisoned roof panel (revealed when ejected)
+  const panelSkirtGeo = buildRoofOpeningRingGeo(-0.0005, -0.010, -0.0005, -0.014, 0.055, 256);
+  panelSkirtGeo.translate(-roofHatchBasePos.x, -roofHatchBasePos.y, -roofHatchBasePos.z);
+  const panelSkirtMesh = new THREE.Mesh(panelSkirtGeo, silverBirchMat);
+  panelSkirtMesh.visible = false;
+  roofHatchGroup.add(panelSkirtMesh);
+
+  // Passenger Ejector Seat Group + Telescoping Under-Seat Hydraulic/Pyrotechnic Ram
   const passengerSeatBasePos = ejectorExtract?.passengerSeatCenter
     ? ejectorExtract.passengerSeatCenter.clone()
-    : new THREE.Vector3(0.32, 0.56, -0.14);
+    : new THREE.Vector3(0.34, 0.56, -0.22);
   const passengerSeatGroup = new THREE.Group();
   passengerSeatGroup.position.copy(passengerSeatBasePos);
   root.add(passengerSeatGroup);
@@ -743,111 +823,43 @@ export function createQBranchGadgetsRig(
       register(
         sm,
         'Q-Branch Passenger Ejector Seat',
-        'Connolly Leather Bucket Seat',
-        'Minimal-clearance passenger bucket seat propelled vertically by twin compressed-air cylinders.',
+        'Connolly Leather & Martin-Baker Launch Frame',
+        'Passenger bucket seat mounted on a vertical pyrotechnic launch rail triggered by the red gearshift button.',
         [0.35, 1.25, -0.15]
       );
       passengerSeatGroup.add(sm);
     }
   }
 
-  // Compact twin compressed-air launch pistons tucked cleanly beneath the seat cushion
-  for (const rx of [-0.095, 0.095]) {
-    const airPiston = register(
-      new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.016, 0.16, 14), chromeMat),
-      'Compressed-Air Ejector Piston',
-      'High-Pressure Pneumatic Rod',
-      'Telescoping compressed-air piston rod driving jet-cockpit style vertical ejection.',
-      [0.35, 0.85, -0.14]
-    );
-    airPiston.position.set(rx, -0.14, -0.02);
-    passengerSeatGroup.add(airPiston);
+  // Under-seat steel launch frame & telescoping twin booster pistons (travel upward with the seat)
+  const seatTray = register(
+    new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.024, 0.40), gunmetalMat),
+    'Ejector Seat Pyrotechnic Launch Tray',
+    'Reinforced Steel Sabot Cradle',
+    'Under-seat Martin-Baker launch cradle and guide rail assembly.',
+    [0.35, 0.95, -0.15]
+  );
+  seatTray.position.set(0, -0.20, 0.02);
+  passengerSeatGroup.add(seatTray);
+
+  for (const rx of [-0.12, 0.12]) {
+    const boosterRod = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.58, 16), chromeMat);
+    boosterRod.position.set(rx, -0.49, -0.04);
+    passengerSeatGroup.add(boosterRod);
   }
 
-  // Fixed floor-mounted compressed-air receiver cylinders anchored beneath the seat
-  for (const rx of [-0.095, 0.095]) {
+  // Fixed floor-mounted mortar launch tubes on the passenger floor pan
+  for (const rx of [-0.12, 0.12]) {
     const floorTube = register(
-      new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.024, 0.16, 14), gunmetalMat),
-      'Compressed-Air Floor Cylinder',
-      'High-Pressure Pneumatic Reservoir',
-      'Twin compressed-air cylinders bolted to the cabin floor pan beneath the passenger seat.',
-      [0.35, 0.45, -0.14]
+      new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.032, 0.24, 16), gunmetalMat),
+      'Ejector Seat Floor Mortar Cylinder',
+      'Breech-Loaded Steel Launch Cylinder',
+      'Twin compressed-gas/pyrotechnic launch cylinders anchored to the right-hand chassis frame.',
+      [0.35, 0.45, -0.15]
     );
-    floorTube.position.set(passengerSeatBasePos.x + rx, 0.34, passengerSeatBasePos.z - 0.02);
+    floorTube.position.set(passengerSeatBasePos.x + rx, 0.34, passengerSeatBasePos.z - 0.04);
     root.add(floorTube);
   }
-
-  // Compressed-Air Vapour Burst Particle System (white-blue pneumatic blast on ejection)
-  const EJECT_AIR_COUNT = 72;
-  const ejectAirPos = new Float32Array(EJECT_AIR_COUNT * 3);
-  const ejectAirAge = new Float32Array(EJECT_AIR_COUNT);
-  const ejectAirSize = new Float32Array(EJECT_AIR_COUNT);
-  const ejectAirSeed = new Float32Array(EJECT_AIR_COUNT);
-  const ejectAirRot = new Float32Array(EJECT_AIR_COUNT);
-  const ejectAirParticles: SmokeParticle[] = [];
-  for (let i = 0; i < EJECT_AIR_COUNT; i++) {
-    ejectAirParticles.push({
-      active: false,
-      age: 0,
-      life: 0.55,
-      pos: new THREE.Vector3(0, -10, 0),
-      vel: new THREE.Vector3(),
-      baseSize: 0.35,
-      seed: Math.random() * 100,
-      rot: Math.random() * Math.PI * 2,
-    });
-    ejectAirPos[i * 3 + 1] = -10;
-  }
-  const ejectAirGeo = new THREE.BufferGeometry();
-  ejectAirGeo.setAttribute('position', new THREE.BufferAttribute(ejectAirPos, 3));
-  ejectAirGeo.setAttribute('aAge', new THREE.BufferAttribute(ejectAirAge, 1));
-  ejectAirGeo.setAttribute('aSize', new THREE.BufferAttribute(ejectAirSize, 1));
-  ejectAirGeo.setAttribute('aSeed', new THREE.BufferAttribute(ejectAirSeed, 1));
-  ejectAirGeo.setAttribute('aRot', new THREE.BufferAttribute(ejectAirRot, 1));
-
-  const ejectAirMat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    uniforms: {
-      uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
-    },
-    vertexShader: `
-      attribute float aAge;
-      attribute float aSize;
-      attribute float aRot;
-      varying float vAge;
-      varying float vRot;
-      uniform float uPixelRatio;
-      void main() {
-        vAge = aAge;
-        vRot = aRot;
-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_Position = projectionMatrix * mvPosition;
-        float grow = mix(0.25, 1.65, clamp(aAge, 0.0, 1.0));
-        gl_PointSize = aSize * grow * uPixelRatio * (380.0 / max(0.4, -mvPosition.z));
-      }
-    `,
-    fragmentShader: `
-      varying float vAge;
-      varying float vRot;
-      void main() {
-        vec2 uv = gl_PointCoord - 0.5;
-        float dist = length(uv) * 2.0;
-        if (dist > 1.0) discard;
-        float soft = pow(1.0 - dist, 1.8);
-        float fadeIn = smoothstep(0.0, 0.08, vAge);
-        float fadeOut = 1.0 - smoothstep(0.25, 1.0, vAge);
-        float alpha = soft * fadeIn * fadeOut * 0.72;
-        if (alpha < 0.01) discard;
-        vec3 col = mix(vec3(0.78, 0.90, 1.0), vec3(0.96, 0.99, 1.0), soft);
-        gl_FragColor = vec4(col, alpha);
-      }
-    `,
-  });
-  const ejectAirPoints = new THREE.Points(ejectAirGeo, ejectAirMat);
-  ejectAirPoints.frustumCulled = false;
-  ejectAirPoints.renderOrder = 45;
-  root.add(ejectAirPoints);
 
   // =========================================================================
   // 5. REAR SMOKE, LEFT-TAILLIGHT OIL PUMP, & RIGHT-TAILLIGHT CALTROP DISPENSER
@@ -894,170 +906,170 @@ export function createQBranchGadgetsRig(
   leftCavity.position.set(0.6325, 0.785, -2.150);
   root.add(leftCavity);
 
-    const leftOilArms: THREE.Mesh[] = [];
-    for (const sx of [0.614, 0.650]) {
-      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.006, 0.036), chromeMat);
-      arm.position.set(sx - 0.6325, -0.012, 0.002);
-      arm.visible = false;
-      leftOilLampPivot.add(arm);
-      leftOilArms.push(arm);
-    }
+  const leftOilArms: THREE.Mesh[] = [];
+  for (const sx of [0.614, 0.650]) {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.006, 0.036), chromeMat);
+    arm.position.set(sx - 0.6325, -0.012, 0.002);
+    arm.visible = false;
+    leftOilLampPivot.add(arm);
+    leftOilArms.push(arm);
+  }
 
-    // Hollow machined dispensing pipe (LatheGeometry with real inner bore facing -Z)
-    const nozzlePipeGeo = new THREE.LatheGeometry(
-      [
-        new THREE.Vector2(0.0125, -0.0375),
-        new THREE.Vector2(0.0125, 0.022),
-        new THREE.Vector2(0.0108, 0.026),
-        new THREE.Vector2(0.0108, 0.0365),
-        new THREE.Vector2(0.0092, 0.0375),
-        new THREE.Vector2(0.0056, 0.0375),
-        new THREE.Vector2(0.0052, -0.015),
-        new THREE.Vector2(0.0, -0.015),
-      ],
-      24
-    );
-    const leftOilNozzle = register(
-      new THREE.Mesh(nozzlePipeGeo, chromeMat),
-      'Left Taillight Oil Slick Nozzle',
-      'Machined Hollow Aluminum Pipe',
-      'Retractable hollow high-pressure oil dispensing pipe concealed behind the hinged left amber indicator.',
-      [0.88, 0.25, -1.22]
-    );
-    leftOilNozzle.rotation.x = -Math.PI / 2; // +Y hollow tip points toward -Z (rear)
-    leftOilNozzle.position.set(0.6325, 0.785, -2.165);
-    root.add(leftOilNozzle);
+  // Hollow machined dispensing pipe (LatheGeometry with real inner bore facing -Z)
+  const nozzlePipeGeo = new THREE.LatheGeometry(
+    [
+      new THREE.Vector2(0.0125, -0.0375),
+      new THREE.Vector2(0.0125, 0.022),
+      new THREE.Vector2(0.0108, 0.026),
+      new THREE.Vector2(0.0108, 0.0365),
+      new THREE.Vector2(0.0092, 0.0375),
+      new THREE.Vector2(0.0056, 0.0375),
+      new THREE.Vector2(0.0052, -0.015),
+      new THREE.Vector2(0.0, -0.015),
+    ],
+    24
+  );
+  const leftOilNozzle = register(
+    new THREE.Mesh(nozzlePipeGeo, chromeMat),
+    'Left Taillight Oil Slick Nozzle',
+    'Machined Hollow Aluminum Pipe',
+    'Retractable hollow high-pressure oil dispensing pipe concealed behind the hinged left amber indicator.',
+    [0.88, 0.25, -1.22]
+  );
+  leftOilNozzle.rotation.x = -Math.PI / 2; // +Y hollow tip points toward -Z (rear)
+  leftOilNozzle.position.set(0.6325, 0.785, -2.165);
+  root.add(leftOilNozzle);
 
-    const aluFrameMat = new THREE.MeshStandardMaterial({
-      color: 0xcbd5e1,
-      metalness: 0.86,
-      roughness: 0.26,
-    });
-    const oilRackFrame = register(
-      new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.20, 0.064), aluFrameMat),
-      'Q-Branch Oil Pump Mounting Frame',
-      'Slotted Machined Aluminum',
-      'Internal left-wing structural frame supporting the hydraulic oil pump and upper nozzle.',
-      [0.92, 0.20, -1.10]
-    );
-    oilRackFrame.position.set(0.585, 0.68, -2.06);
-    root.add(oilRackFrame);
+  const aluFrameMat = new THREE.MeshStandardMaterial({
+    color: 0xcbd5e1,
+    metalness: 0.86,
+    roughness: 0.26,
+  });
+  const oilRackFrame = register(
+    new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.20, 0.064), aluFrameMat),
+    'Q-Branch Oil Pump Mounting Frame',
+    'Slotted Machined Aluminum',
+    'Internal left-wing structural frame supporting the hydraulic oil pump and upper nozzle.',
+    [0.92, 0.20, -1.10]
+  );
+  oilRackFrame.position.set(0.585, 0.68, -2.06);
+  root.add(oilRackFrame);
 
-    const oilPumpCylinder = register(
-      new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.135, 20), aluFrameMat),
-      'Pressurized Oil Slick Pump Cylinder',
-      'Turned Aluminum & Brass Manifold',
-      'High-pressure hydraulic pump driving slick oil up the braided hose to the left taillight.',
-      [0.95, 0.16, -1.05]
-    );
-    oilPumpCylinder.rotation.x = Math.PI / 2;
-    oilPumpCylinder.position.set(0.582, 0.635, -1.97);
-    root.add(oilPumpCylinder);
+  const oilPumpCylinder = register(
+    new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.135, 20), aluFrameMat),
+    'Pressurized Oil Slick Pump Cylinder',
+    'Turned Aluminum & Brass Manifold',
+    'High-pressure hydraulic pump driving slick oil up the braided hose to the left taillight.',
+    [0.95, 0.16, -1.05]
+  );
+  oilPumpCylinder.rotation.x = Math.PI / 2;
+  oilPumpCylinder.position.set(0.582, 0.635, -1.97);
+  root.add(oilPumpCylinder);
 
-    const hoseCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0.582, 0.655, -1.91),
-      new THREE.Vector3(0.585, 0.745, -1.95),
-      new THREE.Vector3(0.625, 0.785, -2.12),
-    ]);
-    const oilHose = register(
-      new THREE.Mesh(new THREE.TubeGeometry(hoseCurve, 16, 0.0085, 10, false), rubberPadMat),
-      'High-Pressure Oil Feed Hose',
-      'Reinforced Braided Hydraulic Line',
-      'Pressurized feed line routing oil from the wing pump to the hinged taillight nozzle.',
-      [0.94, 0.22, -1.08]
-    );
-    root.add(oilHose);
+  const hoseCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0.582, 0.655, -1.91),
+    new THREE.Vector3(0.585, 0.745, -1.95),
+    new THREE.Vector3(0.625, 0.785, -2.12),
+  ]);
+  const oilHose = register(
+    new THREE.Mesh(new THREE.TubeGeometry(hoseCurve, 16, 0.0085, 10, false), rubberPadMat),
+    'High-Pressure Oil Feed Hose',
+    'Reinforced Braided Hydraulic Line',
+    'Pressurized feed line routing oil from the wing pump to the hinged taillight nozzle.',
+    [0.94, 0.22, -1.08]
+  );
+  root.add(oilHose);
 
-    // --- 5B. RIGHT TAILLIGHT (-X): Bottom-Hinged Cluster + Caltrop / Nail Dispenser ---
-    const rightCaltropPivot = new THREE.Group();
-    rightCaltropPivot.position.copy(
-      tailLightSplits?.rightClusterPivotPos ?? new THREE.Vector3(-0.6325, 0.578, -2.172)
-    );
-    root.add(rightCaltropPivot);
+  // --- 5B. RIGHT TAILLIGHT (-X): Bottom-Hinged Cluster + Caltrop / Nail Dispenser ---
+  const rightCaltropPivot = new THREE.Group();
+  rightCaltropPivot.position.copy(
+    tailLightSplits?.rightClusterPivotPos ?? new THREE.Vector3(-0.6325, 0.578, -2.172)
+  );
+  root.add(rightCaltropPivot);
 
-    if (tailLightSplits) {
-      for (const m of tailLightSplits.rightClusterMeshes) {
-        register(
-          m,
-          'Right Taillight Cluster (Caltrop Hatch)',
-          'Bottom-Hinged Lucas Cluster',
-          'Entire 3-lens right taillight assembly hinged at the bottom to drop open and release road caltrops.',
-          [-0.85, 0.25, -1.25]
-        );
-        rightCaltropPivot.add(m);
-      }
-    }
-
-    const rightCavity = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.235, 0.075), cavityMat);
-    rightCavity.position.set(-0.6325, 0.704, -2.148);
-    root.add(rightCavity);
-
-    const rightHinge = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.068, 12), chromeMat);
-    rightHinge.rotation.z = Math.PI / 2;
-    rightCaltropPivot.add(rightHinge);
-
-    const caltropHopper = register(
-      new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.20, 0.085), aluFrameMat),
-      'Caltrop Magazine & Ejector Rack',
-      'Machined Aluminum Hopper',
-      'Internal right-wing vertical magazine feeding 4-sided steel tire-shredding caltrops.',
-      [-0.92, 0.20, -1.10]
-    );
-    caltropHopper.position.set(-0.6325, 0.70, -2.06);
-    root.add(caltropHopper);
-
-    for (const cx of [-0.646, -0.619]) {
-      const chute = register(
-        new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.095, 14), gunmetalMat),
-        'Caltrop Ejector Chute',
-        'Hardened Steel Launch Tube',
-        'Spring-loaded dual launch chute expelling four-sided caltrops onto the road behind.',
-        [-0.90, 0.22, -1.20]
+  if (tailLightSplits) {
+    for (const m of tailLightSplits.rightClusterMeshes) {
+      register(
+        m,
+        'Right Taillight Cluster (Caltrop Hatch)',
+        'Bottom-Hinged Lucas Cluster',
+        'Entire 3-lens right taillight assembly hinged at the bottom to drop open and release road caltrops.',
+        [-0.85, 0.25, -1.25]
       );
-      chute.rotation.x = Math.PI / 2 + 0.14;
-      chute.position.set(cx, 0.675, -2.14);
-      root.add(chute);
+      rightCaltropPivot.add(m);
     }
+  }
 
-    // --- A. Volumetric Billowing Smoke Screen (Half-Lambert Lit FBM Cloud Shader) ---
-    const SMOKE_COUNT = 420;
-    const smokePositions = new Float32Array(SMOKE_COUNT * 3);
-    const smokeAges = new Float32Array(SMOKE_COUNT);
-    const smokeSizes = new Float32Array(SMOKE_COUNT);
-    const smokeSeeds = new Float32Array(SMOKE_COUNT);
-    const smokeRots = new Float32Array(SMOKE_COUNT);
-    const smokeParticles: SmokeParticle[] = [];
+  const rightCavity = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.235, 0.075), cavityMat);
+  rightCavity.position.set(-0.6325, 0.704, -2.148);
+  root.add(rightCavity);
 
-    for (let i = 0; i < SMOKE_COUNT; i++) {
-      smokeParticles.push({
-        active: false,
-        age: 0,
-        life: 3.4,
-        pos: new THREE.Vector3(0, -10, 0),
-        vel: new THREE.Vector3(),
-        baseSize: 1.0,
-        seed: Math.random() * 100,
-        rot: Math.random() * Math.PI * 2,
-      });
-      smokePositions[i * 3 + 1] = -10;
-    }
+  const rightHinge = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.068, 12), chromeMat);
+  rightHinge.rotation.z = Math.PI / 2;
+  rightCaltropPivot.add(rightHinge);
 
-    const smokeGeo = new THREE.BufferGeometry();
-    smokeGeo.setAttribute('position', new THREE.BufferAttribute(smokePositions, 3));
-    smokeGeo.setAttribute('aAge', new THREE.BufferAttribute(smokeAges, 1));
-    smokeGeo.setAttribute('aSize', new THREE.BufferAttribute(smokeSizes, 1));
-    smokeGeo.setAttribute('aSeed', new THREE.BufferAttribute(smokeSeeds, 1));
-    smokeGeo.setAttribute('aRot', new THREE.BufferAttribute(smokeRots, 1));
+  const caltropHopper = register(
+    new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.20, 0.085), aluFrameMat),
+    'Caltrop Magazine & Ejector Rack',
+    'Machined Aluminum Hopper',
+    'Internal right-wing vertical magazine feeding 4-sided steel tire-shredding caltrops.',
+    [-0.92, 0.20, -1.10]
+  );
+  caltropHopper.position.set(-0.6325, 0.70, -2.06);
+  root.add(caltropHopper);
 
-    const smokeMat = new THREE.ShaderMaterial({
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.NormalBlending,
-      uniforms: {
-        uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
-        uLightDir: { value: new THREE.Vector3(0.4, 0.85, 0.35).normalize() },
-      },
-      vertexShader: `
+  for (const cx of [-0.646, -0.619]) {
+    const chute = register(
+      new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.095, 14), gunmetalMat),
+      'Caltrop Ejector Chute',
+      'Hardened Steel Launch Tube',
+      'Spring-loaded dual launch chute expelling four-sided caltrops onto the road behind.',
+      [-0.90, 0.22, -1.20]
+    );
+    chute.rotation.x = Math.PI / 2 + 0.14;
+    chute.position.set(cx, 0.675, -2.14);
+    root.add(chute);
+  }
+
+  // --- A. Volumetric Billowing Smoke Screen (Half-Lambert Lit FBM Cloud Shader) ---
+  const SMOKE_COUNT = 420;
+  const smokePositions = new Float32Array(SMOKE_COUNT * 3);
+  const smokeAges = new Float32Array(SMOKE_COUNT);
+  const smokeSizes = new Float32Array(SMOKE_COUNT);
+  const smokeSeeds = new Float32Array(SMOKE_COUNT);
+  const smokeRots = new Float32Array(SMOKE_COUNT);
+  const smokeParticles: SmokeParticle[] = [];
+
+  for (let i = 0; i < SMOKE_COUNT; i++) {
+    smokeParticles.push({
+      active: false,
+      age: 0,
+      life: 3.4,
+      pos: new THREE.Vector3(0, -10, 0),
+      vel: new THREE.Vector3(),
+      baseSize: 1.0,
+      seed: Math.random() * 100,
+      rot: Math.random() * Math.PI * 2,
+    });
+    smokePositions[i * 3 + 1] = -10;
+  }
+
+  const smokeGeo = new THREE.BufferGeometry();
+  smokeGeo.setAttribute('position', new THREE.BufferAttribute(smokePositions, 3));
+  smokeGeo.setAttribute('aAge', new THREE.BufferAttribute(smokeAges, 1));
+  smokeGeo.setAttribute('aSize', new THREE.BufferAttribute(smokeSizes, 1));
+  smokeGeo.setAttribute('aSeed', new THREE.BufferAttribute(smokeSeeds, 1));
+  smokeGeo.setAttribute('aRot', new THREE.BufferAttribute(smokeRots, 1));
+
+  const smokeMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.NormalBlending,
+    uniforms: {
+      uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
+      uLightDir: { value: new THREE.Vector3(0.4, 0.85, 0.35).normalize() },
+    },
+    vertexShader: `
       attribute float aAge;
       attribute float aSize;
       attribute float aSeed;
@@ -1076,7 +1088,7 @@ export function createQBranchGadgetsRig(
         gl_PointSize = aSize * grow * uPixelRatio * (620.0 / max(0.5, -mvPosition.z));
       }
     `,
-      fragmentShader: `
+    fragmentShader: `
       uniform vec3 uLightDir;
       varying float vAge;
       varying float vSeed;
@@ -1132,41 +1144,41 @@ export function createQBranchGadgetsRig(
         gl_FragColor = vec4(col, alpha);
       }
     `,
+  });
+
+  const smokePoints = new THREE.Points(smokeGeo, smokeMat);
+  smokePoints.frustumCulled = false;
+  smokePoints.renderOrder = 50; // Always render after transparent car glass, lights, dashboard, and badges
+  root.add(smokePoints);
+
+  // --- B. Cohesive High-Viscosity Oil Stream, Connected Liquid Packets & Metaball Puddle ---
+  const OIL_COUNT = 180;
+  const oilDroplets: OilDroplet[] = [];
+  const oilSeeds = new Float32Array(OIL_COUNT);
+  for (let i = 0; i < OIL_COUNT; i++) {
+    oilDroplets.push({
+      active: false,
+      age: 0,
+      life: 1.35,
+      radius: 0.0085,
+      elongation: 5.5,
+      pos: new THREE.Vector3(0, -10, 0),
+      vel: new THREE.Vector3(),
     });
+    oilSeeds[i] = (i * 0.42) % 62.8;
+  }
 
-    const smokePoints = new THREE.Points(smokeGeo, smokeMat);
-    smokePoints.frustumCulled = false;
-    smokePoints.renderOrder = 50; // Always render after transparent car glass, lights, dashboard, and badges
-    root.add(smokePoints);
+  const blobGeo = new THREE.SphereGeometry(1.0, 18, 14);
+  blobGeo.setAttribute('aSeed', new THREE.InstancedBufferAttribute(oilSeeds, 1));
 
-    // --- B. Cohesive High-Viscosity Oil Stream, Connected Liquid Packets & Metaball Puddle ---
-    const OIL_COUNT = 180;
-    const oilDroplets: OilDroplet[] = [];
-    const oilSeeds = new Float32Array(OIL_COUNT);
-    for (let i = 0; i < OIL_COUNT; i++) {
-      oilDroplets.push({
-        active: false,
-        age: 0,
-        life: 1.35,
-        radius: 0.0085,
-        elongation: 5.5,
-        pos: new THREE.Vector3(0, -10, 0),
-        vel: new THREE.Vector3(),
-      });
-      oilSeeds[i] = (i * 0.42) % 62.8;
-    }
-
-    const blobGeo = new THREE.SphereGeometry(1.0, 18, 14);
-    blobGeo.setAttribute('aSeed', new THREE.InstancedBufferAttribute(oilSeeds, 1));
-
-    // Shared Beer-Lambert + IOR 1.47 dielectric shader with smooth cohesive capsule deformation
-    const oilBlobMat = new THREE.ShaderMaterial({
-      transparent: true,
-      depthWrite: true,
-      uniforms: {
-        uTime: { value: 0 },
-      },
-      vertexShader: `
+  // Shared Beer-Lambert + IOR 1.47 dielectric shader with smooth cohesive capsule deformation
+  const oilBlobMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: true,
+    uniforms: {
+      uTime: { value: 0 },
+    },
+    vertexShader: `
         attribute float aSeed;
         varying vec3 vNormal;
         varying vec3 vViewDir;
@@ -1191,7 +1203,7 @@ export function createQBranchGadgetsRig(
           gl_Position = projectionMatrix * viewMatrix * wp;
         }
       `,
-      fragmentShader: `
+    fragmentShader: `
         varying vec3 vNormal;
         varying vec3 vViewDir;
         varying float vAxial;
@@ -1221,45 +1233,45 @@ export function createQBranchGadgetsRig(
           gl_FragColor = vec4(col, alpha);
         }
       `,
-    });
+  });
 
-    const oilBlobInstanced = new THREE.InstancedMesh(blobGeo, oilBlobMat, OIL_COUNT);
-    oilBlobInstanced.frustumCulled = false;
-    oilBlobInstanced.renderOrder = 2;
-    root.add(oilBlobInstanced);
+  const oilBlobInstanced = new THREE.InstancedMesh(blobGeo, oilBlobMat, OIL_COUNT);
+  oilBlobInstanced.frustumCulled = false;
+  oilBlobInstanced.renderOrder = 2;
+  root.add(oilBlobInstanced);
 
-    // Nozzle-anchored continuous ballistic viscous oil stream (matches gravity parabolic trajectory)
-    const filCurvePts: THREE.Vector3[] = [];
-    for (let i = 0; i <= 24; i++) {
-      const u = i / 24;
-      const distZ = u * 0.72; // Extends 0.72m along the ballistic arc before pinching into long ribbons
-      const flightT = distZ / 1.38;
-      const dropY = 0.04 * flightT - 0.5 * 3.8 * flightT * flightT;
-      filCurvePts.push(new THREE.Vector3(0, dropY, -distZ));
-    }
-    const filCurve = new THREE.CatmullRomCurve3(filCurvePts);
-    const filGeo = new THREE.TubeGeometry(filCurve, 44, 1.0, 16, false);
-    const filPos = filGeo.attributes.position;
-    const filUv = filGeo.attributes.uv;
-    const filPt = new THREE.Vector3();
-    for (let i = 0; i < filPos.count; i++) {
-      const u = filUv.getX(i);
-      const c = filCurve.getPointAt(THREE.MathUtils.clamp(u, 0, 1));
-      const r = THREE.MathUtils.lerp(0.0062, 0.0040, Math.pow(u, 0.65));
-      filPt.fromBufferAttribute(filPos, i).sub(c).multiplyScalar(r).add(c);
-      filPos.setXYZ(i, filPt.x, filPt.y, filPt.z);
-    }
-    filGeo.computeVertexNormals();
+  // Nozzle-anchored continuous ballistic viscous oil stream (matches gravity parabolic trajectory)
+  const filCurvePts: THREE.Vector3[] = [];
+  for (let i = 0; i <= 24; i++) {
+    const u = i / 24;
+    const distZ = u * 0.72; // Extends 0.72m along the ballistic arc before pinching into long ribbons
+    const flightT = distZ / 1.38;
+    const dropY = 0.04 * flightT - 0.5 * 3.8 * flightT * flightT;
+    filCurvePts.push(new THREE.Vector3(0, dropY, -distZ));
+  }
+  const filCurve = new THREE.CatmullRomCurve3(filCurvePts);
+  const filGeo = new THREE.TubeGeometry(filCurve, 44, 1.0, 16, false);
+  const filPos = filGeo.attributes.position;
+  const filUv = filGeo.attributes.uv;
+  const filPt = new THREE.Vector3();
+  for (let i = 0; i < filPos.count; i++) {
+    const u = filUv.getX(i);
+    const c = filCurve.getPointAt(THREE.MathUtils.clamp(u, 0, 1));
+    const r = THREE.MathUtils.lerp(0.0062, 0.0040, Math.pow(u, 0.65));
+    filPt.fromBufferAttribute(filPos, i).sub(c).multiplyScalar(r).add(c);
+    filPos.setXYZ(i, filPt.x, filPt.y, filPt.z);
+  }
+  filGeo.computeVertexNormals();
 
-    const oilFilamentMat = new THREE.ShaderMaterial({
-      transparent: true,
-      depthWrite: true,
-      uniforms: {
-        uTime: { value: 0 },
-        uActive: { value: 0 },
-        uLength: { value: 1 },
-      },
-      vertexShader: `
+  const oilFilamentMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: true,
+    uniforms: {
+      uTime: { value: 0 },
+      uActive: { value: 0 },
+      uLength: { value: 1 },
+    },
+    vertexShader: `
         varying vec2 vUv;
         varying vec3 vNormal;
         varying vec3 vViewDir;
@@ -1285,7 +1297,7 @@ export function createQBranchGadgetsRig(
           gl_Position = projectionMatrix * viewMatrix * wp;
         }
       `,
-      fragmentShader: `
+    fragmentShader: `
         varying vec2 vUv;
         varying vec3 vNormal;
         varying vec3 vViewDir;
@@ -1312,30 +1324,30 @@ export function createQBranchGadgetsRig(
           gl_FragColor = vec4(col, uActive * mix(0.94, 1.0, tipFade));
         }
       `,
-    });
-    const oilFilamentMesh = new THREE.Mesh(filGeo, oilFilamentMat);
-    oilFilamentMesh.position.set(0.6325, 0.785, -2.250);
-    oilFilamentMesh.renderOrder = 2;
-    root.add(oilFilamentMesh);
+  });
+  const oilFilamentMesh = new THREE.Mesh(filGeo, oilFilamentMat);
+  oilFilamentMesh.position.set(0.6325, 0.785, -2.250);
+  oilFilamentMesh.renderOrder = 2;
+  root.add(oilFilamentMesh);
 
-    const MAX_METABALLS = 36;
-    const oilMetaballs: OilMetaball[] = [];
-    const oilBallUniforms: THREE.Vector4[] = [];
-    for (let i = 0; i < MAX_METABALLS; i++) {
-      oilMetaballs.push({ active: false, x: 0, z: -10, vx: 0, vz: 0, r: 0 });
-      oilBallUniforms.push(new THREE.Vector4(0, -10, 0, 0));
-    }
-    const oilImpact = new THREE.Vector3(0.63, -3.5, 10.0);
+  const MAX_METABALLS = 36;
+  const oilMetaballs: OilMetaball[] = [];
+  const oilBallUniforms: THREE.Vector4[] = [];
+  for (let i = 0; i < MAX_METABALLS; i++) {
+    oilMetaballs.push({ active: false, x: 0, z: -10, vx: 0, vz: 0, r: 0 });
+    oilBallUniforms.push(new THREE.Vector4(0, -10, 0, 0));
+  }
+  const oilImpact = new THREE.Vector3(0.63, -3.5, 10.0);
 
-    const oilPuddleMat = new THREE.ShaderMaterial({
-      transparent: true,
-      depthWrite: false,
-      uniforms: {
-        uBalls: { value: oilBallUniforms },
-        uImpact: { value: oilImpact },
-        uTime: { value: 0.0 },
-      },
-      vertexShader: `
+  const oilPuddleMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: {
+      uBalls: { value: oilBallUniforms },
+      uImpact: { value: oilImpact },
+      uTime: { value: 0.0 },
+    },
+    vertexShader: `
       varying vec3 vWorldPos;
       void main() {
         vec4 wp = modelMatrix * vec4(position, 1.0);
@@ -1343,7 +1355,7 @@ export function createQBranchGadgetsRig(
         gl_Position = projectionMatrix * viewMatrix * wp;
       }
     `,
-      fragmentShader: `
+    fragmentShader: `
       varying vec3 vWorldPos;
       uniform vec4 uBalls[36];
       uniform vec3 uImpact;
@@ -1438,467 +1450,413 @@ export function createQBranchGadgetsRig(
         gl_FragColor = vec4(col, 0.97);
       }
     `,
+  });
+
+  const oilPuddle = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 5.4), oilPuddleMat);
+  oilPuddle.rotation.x = -Math.PI / 2;
+  oilPuddle.position.set(0.60, 0.023, -3.90);
+  oilPuddle.renderOrder = 1;
+  root.add(oilPuddle);
+
+  // --- C. Four-Sided Steel Caltrops (InstancedMesh, Right Taillight Dispenser) ---
+  const CALTROP_COUNT = 48;
+  const caltrops: CaltropItem[] = [];
+  for (let i = 0; i < CALTROP_COUNT; i++) {
+    caltrops.push({
+      active: false,
+      settled: false,
+      age: 0,
+      life: 6.0,
+      pos: new THREE.Vector3(0, -10, 0),
+      vel: new THREE.Vector3(),
+      rot: new THREE.Euler(),
+      angVel: new THREE.Vector3(),
     });
+  }
+  const caltropGeo = buildTetraCaltropGeometry(0.024);
+  const caltropMat = new THREE.MeshStandardMaterial({
+    color: 0xcbd5e1,
+    metalness: 0.9,
+    roughness: 0.28,
+  });
+  const caltropInstanced = new THREE.InstancedMesh(caltropGeo, caltropMat, CALTROP_COUNT);
+  caltropInstanced.frustumCulled = false;
+  root.add(caltropInstanced);
 
-    const oilPuddle = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 5.4), oilPuddleMat);
-    oilPuddle.rotation.x = -Math.PI / 2;
-    oilPuddle.position.set(0.60, 0.023, -3.90);
-    oilPuddle.renderOrder = 1;
-    root.add(oilPuddle);
+  return {
+    root,
+    frontPlateDrum: frontPlate.drum,
+    rearPlateDrum: rearPlate.drum,
+    frontRams,
+    rearRams,
+    bulletShieldGroup,
+    roofHatchGroup,
+    roofHatchBasePos,
+    passengerSeatGroup,
+    passengerSeatBasePos,
+    leftOilLampPivot,
+    leftOilNozzle,
+    leftOilArms,
+    rightCaltropPivot,
+    subParts,
+    plateAngle: 0,
+    ramFrontExtend: 0,
+    ramRearExtend: 0,
+    shieldExtend: 0,
+    hatchActivePrev: false,
+    hatchTimer: 0,
+    hatchOpen: 0,
+    seatEjectProgress: 0,
+    oilLidOpen: 0,
+    caltropLidOpen: 0,
+    smokePoints,
+    smokeParticles,
+    oilBlobInstanced,
+    oilBlobMat,
+    oilFilamentMesh,
+    oilFilamentMat,
+    oilDroplets,
+    oilMetaballs,
+    oilPuddleMat,
+    oilImpact,
+    oilSpawnAccum: 0,
+    caltropInstanced,
+    caltrops,
+    time: 0,
+  };
+}
 
-    // --- C. Four-Sided Steel Caltrops (InstancedMesh, Right Taillight Dispenser) ---
-    const CALTROP_COUNT = 48;
-    const caltrops: CaltropItem[] = [];
-    for (let i = 0; i < CALTROP_COUNT; i++) {
-      caltrops.push({
-        active: false,
-        settled: false,
-        age: 0,
-        life: 6.0,
-        pos: new THREE.Vector3(0, -10, 0),
-        vel: new THREE.Vector3(),
-        rot: new THREE.Euler(),
-        angVel: new THREE.Vector3(),
-      });
-    }
-    const caltropGeo = buildTetraCaltropGeometry(0.024);
-    const caltropMat = new THREE.MeshStandardMaterial({
-      color: 0xcbd5e1,
-      metalness: 0.9,
-      roughness: 0.28,
-    });
-    const caltropInstanced = new THREE.InstancedMesh(caltropGeo, caltropMat, CALTROP_COUNT);
-    caltropInstanced.frustumCulled = false;
-    root.add(caltropInstanced);
+const _dummyObj = new THREE.Object3D();
 
-    return {
-      root,
-      frontPlateDrum: frontPlate.drum,
-      rearPlateDrum: rearPlate.drum,
-      frontRams,
-      rearRams,
-      bulletShieldGroup,
-      roofHatchGroup,
-      roofHatchBasePos,
-      passengerSeatGroup,
-      passengerSeatBasePos,
-      ejectAirPoints,
-      ejectAirParticles,
-      leftOilLampPivot,
-      leftOilNozzle,
-      leftOilArms,
-      rightCaltropPivot,
-      subParts,
-      plateAngle: 0,
-      ramFrontExtend: 0,
-      ramRearExtend: 0,
-      shieldExtend: 0,
-      hatchActivePrev: false,
-      hatchTimer: 0,
-      hatchOpen: 0,
-      seatEjectProgress: 0,
-      oilLidOpen: 0,
-      caltropLidOpen: 0,
-      smokePoints,
-      smokeParticles,
-      oilBlobInstanced,
-      oilBlobMat,
-      oilFilamentMesh,
-      oilFilamentMat,
-      oilDroplets,
-      oilMetaballs,
-      oilPuddleMat,
-      oilImpact,
-      oilSpawnAccum: 0,
-      caltropInstanced,
-      caltrops,
-      time: 0,
-    };
+/**
+ * Smoothly updates all exterior Q-Branch mechanical assemblies, custom GLSL smoke particles,
+ * arcing oil droplets, and the iridescent spreading ground oil slick.
+ */
+export function updateQBranchGadgetsRig(
+  rig: QBranchGadgetsRig,
+  state: QBranchGadgetStates,
+  dt: number
+): void {
+  const safeDt = Math.min(dt, 0.05);
+  rig.time += safeDt;
+
+  // 1. Revolving 3-Way Number Plates
+  const targetPlateAngle = state.plateIndex * ((Math.PI * 2) / 3);
+  let diff = targetPlateAngle - rig.plateAngle;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  rig.plateAngle += diff * Math.min(1, safeDt * 9);
+  rig.frontPlateDrum.rotation.x = rig.plateAngle;
+  rig.rearPlateDrum.rotation.x = rig.plateAngle;
+
+  // 2. Front & Rear Hydraulic Battering Rams
+  rig.ramFrontExtend += ((state.frontRam ? 1 : 0) - rig.ramFrontExtend) * Math.min(1, safeDt * 7);
+  rig.ramRearExtend += ((state.rearRam ? 1 : 0) - rig.ramRearExtend) * Math.min(1, safeDt * 7);
+  for (const r of rig.frontRams) r.position.z = rig.ramFrontExtend * 0.26;
+  for (const r of rig.rearRams) r.position.z = rig.ramRearExtend * 0.26;
+
+  // 3. Bullet-Resistant Rear Shield (rises vertically from -0.326m stowed to 0m deployed)
+  rig.shieldExtend += ((state.bulletShield ? 1 : 0) - rig.shieldExtend) * Math.min(1, safeDt * 5.5);
+  rig.bulletShieldGroup.position.y = -0.326 + rig.shieldExtend * 0.326;
+
+  // 4. Passenger Ejector Seat & Jettisonable Roof Panel Sequence
+  // Phase 1 (0.00s -> 0.45s): Explosive bolts pop the passenger roof section upward & backward into the slipstream
+  // Phase 2 (0.14s -> 0.85s): Pyrotechnic floor cylinders launch the passenger bucket seat vertically out through the open roof
+  if (state.roofHatch && !rig.hatchActivePrev) {
+    rig.hatchTimer = 0;
+  }
+  rig.hatchActivePrev = state.roofHatch;
+
+  if (state.roofHatch) {
+    rig.hatchTimer = Math.min(3.0, rig.hatchTimer + safeDt);
+    const tPanel = THREE.MathUtils.clamp(rig.hatchTimer / 0.55, 0, 1);
+    // Ballistic pop-off trajectory: blasts up and tumbles rearward clear of the roof opening
+    rig.hatchOpen = tPanel;
+    const arcY = 2.45 * tPanel - 0.65 * tPanel * tPanel;
+    const driftZ = -2.35 * tPanel * tPanel;
+    const driftX = 0.42 * tPanel;
+    rig.roofHatchGroup.position.set(
+      rig.roofHatchBasePos.x + driftX,
+      rig.roofHatchBasePos.y + arcY,
+      rig.roofHatchBasePos.z + driftZ
+    );
+    rig.roofHatchGroup.rotation.set(-tPanel * 2.1, tPanel * 0.45, -tPanel * 0.75);
+    rig.roofHatchGroup.visible = tPanel < 0.98;
+
+    // Seat launches upward right after the roof panel clears the opening
+    const tSeatRaw = THREE.MathUtils.clamp((rig.hatchTimer - 0.14) / 0.48, 0, 1);
+    // Fast explosive launch curve with subtle damped settle at peak extension
+    const seatEase = 1 - Math.pow(1 - tSeatRaw, 3);
+    rig.seatEjectProgress = seatEase;
+    rig.passengerSeatGroup.position.set(
+      rig.passengerSeatBasePos.x + 0.04 * seatEase,
+      rig.passengerSeatBasePos.y + 0.96 * seatEase,
+      rig.passengerSeatBasePos.z - 0.08 * seatEase
+    );
+    rig.passengerSeatGroup.rotation.set(-0.14 * seatEase, 0, -0.04 * seatEase);
+  } else {
+    // Smoothly retract seat and reseat roof panel flush when reset
+    rig.hatchTimer = 0;
+    rig.hatchOpen += (0 - rig.hatchOpen) * Math.min(1, safeDt * 7.5);
+    rig.seatEjectProgress += (0 - rig.seatEjectProgress) * Math.min(1, safeDt * 7.5);
+    rig.roofHatchGroup.visible = true;
+    rig.roofHatchGroup.position.set(
+      rig.roofHatchBasePos.x + 0.42 * rig.hatchOpen,
+      rig.roofHatchBasePos.y + 1.80 * rig.hatchOpen,
+      rig.roofHatchBasePos.z - 1.65 * rig.hatchOpen
+    );
+    rig.roofHatchGroup.rotation.set(-rig.hatchOpen * 1.4, rig.hatchOpen * 0.3, -rig.hatchOpen * 0.5);
+    rig.passengerSeatGroup.position.set(
+      rig.passengerSeatBasePos.x + 0.04 * rig.seatEjectProgress,
+      rig.passengerSeatBasePos.y + 0.96 * rig.seatEjectProgress,
+      rig.passengerSeatBasePos.z - 0.08 * rig.seatEjectProgress
+    );
+    rig.passengerSeatGroup.rotation.set(-0.14 * rig.seatEjectProgress, 0, -0.04 * rig.seatEjectProgress);
   }
 
-  const _dummyObj = new THREE.Object3D();
+  // 5A. Volumetric Smoke Screen Particle Simulation
+  const posAttr = rig.smokePoints.geometry.getAttribute('position') as THREE.BufferAttribute;
+  const ageAttr = rig.smokePoints.geometry.getAttribute('aAge') as THREE.BufferAttribute;
+  const sizeAttr = rig.smokePoints.geometry.getAttribute('aSize') as THREE.BufferAttribute;
+  const seedAttr = rig.smokePoints.geometry.getAttribute('aSeed') as THREE.BufferAttribute;
+  const rotAttr = rig.smokePoints.geometry.getAttribute('aRot') as THREE.BufferAttribute;
 
-  /**
-   * Smoothly updates all exterior Q-Branch mechanical assemblies, custom GLSL smoke particles,
-   * arcing oil droplets, and the iridescent spreading ground oil slick.
-   */
-  export function updateQBranchGadgetsRig(
-    rig: QBranchGadgetsRig,
-    state: QBranchGadgetStates,
-    dt: number
-  ): void {
-    const safeDt = Math.min(dt, 0.05);
-    rig.time += safeDt;
-
-    // 1. Revolving 3-Way Number Plates
-    const targetPlateAngle = state.plateIndex * ((Math.PI * 2) / 3);
-    let diff = targetPlateAngle - rig.plateAngle;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    rig.plateAngle += diff * Math.min(1, safeDt * 9);
-    rig.frontPlateDrum.rotation.x = rig.plateAngle;
-    rig.rearPlateDrum.rotation.x = rig.plateAngle;
-
-    // 2. Front & Rear Hydraulic Battering Rams
-    rig.ramFrontExtend += ((state.frontRam ? 1 : 0) - rig.ramFrontExtend) * Math.min(1, safeDt * 7);
-    rig.ramRearExtend += ((state.rearRam ? 1 : 0) - rig.ramRearExtend) * Math.min(1, safeDt * 7);
-    for (const r of rig.frontRams) r.position.z = rig.ramFrontExtend * 0.26;
-    for (const r of rig.rearRams) r.position.z = rig.ramRearExtend * 0.26;
-
-    // 3. Bullet-Resistant Rear Shield (rises vertically from -0.326m stowed to 0m deployed)
-    rig.shieldExtend += ((state.bulletShield ? 1 : 0) - rig.shieldExtend) * Math.min(1, safeDt * 5.5);
-    rig.bulletShieldGroup.position.y = -0.326 + rig.shieldExtend * 0.326;
-
-    // 4. Passenger Ejector Seat & Jettisonable Roof Panel Sequence (Jet-Cockpit Compressed-Air Principle)
-    // Stage 1 (0.00s -> 0.32s): Pneumatic bolts shear & blast the flush roof panel cleanly up and rearward out of the slipstream
-    // Stage 2 (0.14s -> 0.54s): High-pressure compressed-air cylinders fire a white-blue vapour burst & rocket the seat skyward
-    if (state.roofHatch && !rig.hatchActivePrev) {
-      rig.hatchTimer = 0;
-    }
-    rig.hatchActivePrev = state.roofHatch;
-
-    if (state.roofHatch) {
-      rig.hatchTimer = Math.min(3.0, rig.hatchTimer + safeDt);
-      const tPanel = THREE.MathUtils.clamp(rig.hatchTimer / 0.36, 0, 1);
-      rig.hatchOpen = tPanel;
-      const arcY = 2.65 * tPanel - 0.55 * tPanel * tPanel;
-      const driftZ = -2.45 * tPanel * tPanel;
-      const driftX = 0.28 * tPanel;
-      rig.roofHatchGroup.position.set(
-        rig.roofHatchBasePos.x + driftX,
-        rig.roofHatchBasePos.y + arcY,
-        rig.roofHatchBasePos.z + driftZ
+  let smokeSpawnBudget = state.smokeScreen ? 8 : 0;
+  for (let i = 0; i < rig.smokeParticles.length; i++) {
+    const p = rig.smokeParticles[i];
+    if (!p.active && smokeSpawnBudget > 0) {
+      smokeSpawnBudget--;
+      p.active = true;
+      p.age = 0;
+      p.life = 2.6 + Math.random() * 1.6;
+      const side = i % 2 === 0 ? -0.43 : 0.43;
+      p.pos.set(side + (Math.random() - 0.5) * 0.06, 0.295, -2.31);
+      p.vel.set(
+        (Math.random() - 0.5) * 0.65 + (side > 0 ? 0.16 : -0.16),
+        0.16 + Math.random() * 0.30,
+        -(2.6 + Math.random() * 1.6)
       );
-      rig.roofHatchGroup.rotation.set(-tPanel * 2.2, tPanel * 0.35, -tPanel * 0.65);
-      rig.roofHatchGroup.visible = tPanel < 0.98;
-
-      // Rapid compressed-air ballistic launch along seat-back angle (+Y, slightly -Z, zero lateral clash)
-      const tSeatRaw = THREE.MathUtils.clamp((rig.hatchTimer - 0.14) / 0.38, 0, 1);
-      const seatEase = 1 - Math.pow(1 - tSeatRaw, 3.2);
-      rig.seatEjectProgress = seatEase;
-      rig.passengerSeatGroup.position.set(
-        rig.passengerSeatBasePos.x,
-        rig.passengerSeatBasePos.y + 1.18 * seatEase,
-        rig.passengerSeatBasePos.z - 0.22 * seatEase
-      );
-      rig.passengerSeatGroup.rotation.set(-0.16 * seatEase, 0, 0);
-    } else {
-      // Smoothly re-seat compressed-air seat and reseat flush roof panel when reset
-      rig.hatchTimer = 0;
-      rig.hatchOpen += (0 - rig.hatchOpen) * Math.min(1, safeDt * 8.0);
-      rig.seatEjectProgress += (0 - rig.seatEjectProgress) * Math.min(1, safeDt * 8.0);
-      rig.roofHatchGroup.visible = true;
-      rig.roofHatchGroup.position.set(
-        rig.roofHatchBasePos.x + 0.28 * rig.hatchOpen,
-        rig.roofHatchBasePos.y + 1.85 * rig.hatchOpen,
-        rig.roofHatchBasePos.z - 1.65 * rig.hatchOpen
-      );
-      rig.roofHatchGroup.rotation.set(-rig.hatchOpen * 1.4, rig.hatchOpen * 0.25, -rig.hatchOpen * 0.45);
-      rig.passengerSeatGroup.position.set(
-        rig.passengerSeatBasePos.x,
-        rig.passengerSeatBasePos.y + 1.18 * rig.seatEjectProgress,
-        rig.passengerSeatBasePos.z - 0.22 * rig.seatEjectProgress
-      );
-      rig.passengerSeatGroup.rotation.set(-0.16 * rig.seatEjectProgress, 0, 0);
+      p.baseSize = 0.85 + Math.random() * 0.7;
+      p.seed = Math.random() * 100;
+      p.rot = Math.random() * Math.PI * 2;
     }
 
-    // 4B. Compressed-Air Vapour Burst from Floor Cylinders during Ejection Launch
-    const airPosAttr = rig.ejectAirPoints.geometry.getAttribute('position') as THREE.BufferAttribute;
-    const airAgeAttr = rig.ejectAirPoints.geometry.getAttribute('aAge') as THREE.BufferAttribute;
-    const airSizeAttr = rig.ejectAirPoints.geometry.getAttribute('aSize') as THREE.BufferAttribute;
-    const airRotAttr = rig.ejectAirPoints.geometry.getAttribute('aRot') as THREE.BufferAttribute;
-
-    const isAirBlasting = state.roofHatch && rig.hatchTimer >= 0.12 && rig.hatchTimer <= 0.65;
-    let airBudget = isAirBlasting ? 10 : 0;
-    for (let i = 0; i < rig.ejectAirParticles.length; i++) {
-      const ap = rig.ejectAirParticles[i];
-      if (!ap.active && airBudget > 0) {
-        airBudget--;
-        ap.active = true;
-        ap.age = 0;
-        ap.life = 0.42 + Math.random() * 0.22;
-        const rx = i % 2 === 0 ? -0.095 : 0.095;
-        ap.pos.set(
-          rig.passengerSeatBasePos.x + rx + (Math.random() - 0.5) * 0.04,
-          0.42,
-          rig.passengerSeatBasePos.z - 0.02 + (Math.random() - 0.5) * 0.04
-        );
-        ap.vel.set(
-          (Math.random() - 0.5) * 0.75 + (rx > 0 ? 0.25 : -0.25),
-          2.2 + Math.random() * 1.6,
-          -0.35 + (Math.random() - 0.5) * 0.45
-        );
-        ap.baseSize = 0.28 + Math.random() * 0.22;
-        ap.rot = Math.random() * Math.PI * 2;
-      }
-
-      if (ap.active) {
-        ap.age += safeDt;
-        const t = ap.age / ap.life;
-        if (t >= 1) {
-          ap.active = false;
-          airPosAttr.setXYZ(i, 0, -10, 0);
-          airAgeAttr.setX(i, 1);
-        } else {
-          ap.vel.multiplyScalar(Math.pow(0.18, safeDt));
-          ap.pos.addScaledVector(ap.vel, safeDt);
-          airPosAttr.setXYZ(i, ap.pos.x, ap.pos.y, ap.pos.z);
-          airAgeAttr.setX(i, t);
-          airSizeAttr.setX(i, ap.baseSize);
-          airRotAttr.setX(i, ap.rot);
-        }
-      } else {
-        airPosAttr.setXYZ(i, 0, -10, 0);
-      }
-    }
-    airPosAttr.needsUpdate = true;
-    airAgeAttr.needsUpdate = true;
-    airSizeAttr.needsUpdate = true;
-    airRotAttr.needsUpdate = true;
-
-    // 5A. Volumetric Smoke Screen Particle Simulation
-    const posAttr = rig.smokePoints.geometry.getAttribute('position') as THREE.BufferAttribute;
-    const ageAttr = rig.smokePoints.geometry.getAttribute('aAge') as THREE.BufferAttribute;
-    const sizeAttr = rig.smokePoints.geometry.getAttribute('aSize') as THREE.BufferAttribute;
-    const seedAttr = rig.smokePoints.geometry.getAttribute('aSeed') as THREE.BufferAttribute;
-    const rotAttr = rig.smokePoints.geometry.getAttribute('aRot') as THREE.BufferAttribute;
-
-    let smokeSpawnBudget = state.smokeScreen ? 8 : 0;
-    for (let i = 0; i < rig.smokeParticles.length; i++) {
-      const p = rig.smokeParticles[i];
-      if (!p.active && smokeSpawnBudget > 0) {
-        smokeSpawnBudget--;
-        p.active = true;
-        p.age = 0;
-        p.life = 2.6 + Math.random() * 1.6;
-        const side = i % 2 === 0 ? -0.43 : 0.43;
-        p.pos.set(side + (Math.random() - 0.5) * 0.06, 0.295, -2.31);
-        p.vel.set(
-          (Math.random() - 0.5) * 0.65 + (side > 0 ? 0.16 : -0.16),
-          0.16 + Math.random() * 0.30,
-          -(2.6 + Math.random() * 1.6)
-        );
-        p.baseSize = 0.85 + Math.random() * 0.7;
-        p.seed = Math.random() * 100;
-        p.rot = Math.random() * Math.PI * 2;
-      }
-
-      if (p.active) {
-        p.age += safeDt;
-        const t = p.age / p.life;
-        if (t >= 1) {
-          p.active = false;
-          posAttr.setXYZ(i, 0, -10, 0);
-          ageAttr.setX(i, 1);
-        } else {
-          // Strong aerodynamic drag + ground-hugging turbulent vortex wake
-          p.vel.z *= Math.pow(0.38, safeDt);
-          p.vel.x += Math.sin(rig.time * 2.8 + p.seed + p.pos.z * 1.4) * 0.75 * safeDt;
-          p.vel.y += (0.24 - p.vel.y) * 0.65 * safeDt;
-          p.pos.addScaledVector(p.vel, safeDt);
-          if (p.pos.y < 0.16) p.pos.y = 0.16;
-
-          posAttr.setXYZ(i, p.pos.x, p.pos.y, p.pos.z);
-          ageAttr.setX(i, t);
-          sizeAttr.setX(i, p.baseSize);
-          seedAttr.setX(i, p.seed);
-          rotAttr.setX(i, p.rot);
-        }
-      } else {
+    if (p.active) {
+      p.age += safeDt;
+      const t = p.age / p.life;
+      if (t >= 1) {
+        p.active = false;
         posAttr.setXYZ(i, 0, -10, 0);
+        ageAttr.setX(i, 1);
+      } else {
+        // Strong aerodynamic drag + ground-hugging turbulent vortex wake
+        p.vel.z *= Math.pow(0.38, safeDt);
+        p.vel.x += Math.sin(rig.time * 2.8 + p.seed + p.pos.z * 1.4) * 0.75 * safeDt;
+        p.vel.y += (0.24 - p.vel.y) * 0.65 * safeDt;
+        p.pos.addScaledVector(p.vel, safeDt);
+        if (p.pos.y < 0.16) p.pos.y = 0.16;
+
+        posAttr.setXYZ(i, p.pos.x, p.pos.y, p.pos.z);
+        ageAttr.setX(i, t);
+        sizeAttr.setX(i, p.baseSize);
+        seedAttr.setX(i, p.seed);
+        rotAttr.setX(i, p.rot);
       }
+    } else {
+      posAttr.setXYZ(i, 0, -10, 0);
     }
-    posAttr.needsUpdate = true;
-    ageAttr.needsUpdate = true;
-    sizeAttr.needsUpdate = true;
-    seedAttr.needsUpdate = true;
-    rotAttr.needsUpdate = true;
+  }
+  posAttr.needsUpdate = true;
+  ageAttr.needsUpdate = true;
+  sizeAttr.needsUpdate = true;
+  seedAttr.needsUpdate = true;
+  rotAttr.needsUpdate = true;
 
-    // 5B. Left Taillight Hinge & Nozzle-Anchored Viscous Filament -> Deformed Droplets -> Metaball Puddle
-    rig.oilLidOpen += ((state.oilSlick ? 1 : 0) - rig.oilLidOpen) * Math.min(1, safeDt * 7.5);
-    rig.leftOilLampPivot.rotation.x = rig.oilLidOpen * 1.32; // Lifts top amber lamp ~75° upward
-    rig.leftOilNozzle.position.z = -2.165 - rig.oilLidOpen * 0.065;
-    for (const arm of rig.leftOilArms) {
-      arm.visible = rig.oilLidOpen > 0.08;
-      arm.scale.z = Math.max(0.05, rig.oilLidOpen);
+  // 5B. Left Taillight Hinge & Nozzle-Anchored Viscous Filament -> Deformed Droplets -> Metaball Puddle
+  rig.oilLidOpen += ((state.oilSlick ? 1 : 0) - rig.oilLidOpen) * Math.min(1, safeDt * 7.5);
+  rig.leftOilLampPivot.rotation.x = rig.oilLidOpen * 1.32; // Lifts top amber lamp ~75° upward
+  rig.leftOilNozzle.position.z = -2.165 - rig.oilLidOpen * 0.065;
+  for (const arm of rig.leftOilArms) {
+    arm.visible = rig.oilLidOpen > 0.08;
+    arm.scale.z = Math.max(0.05, rig.oilLidOpen);
+  }
+
+  const nozzleTipZ = rig.leftOilNozzle.position.z - 0.036;
+  const isPouring = state.oilSlick && rig.oilLidOpen > 0.65;
+  // Smooth, heavy high-viscosity pump pressure wave (continuous cohesive flow, never chopped up)
+  const pumpWave = 0.5 + 0.5 * Math.sin(rig.time * 4.2) + 0.25 * Math.sin(rig.time * 9.6);
+
+  rig.oilBlobMat.uniforms.uTime.value = rig.time;
+  rig.oilFilamentMesh.position.z = nozzleTipZ + 0.008;
+  rig.oilFilamentMat.uniforms.uTime.value = rig.time;
+  rig.oilFilamentMat.uniforms.uActive.value +=
+    ((isPouring ? 1 : 0) - rig.oilFilamentMat.uniforms.uActive.value) * Math.min(1, safeDt * 9);
+  rig.oilFilamentMat.uniforms.uLength.value = 0.78 + 0.20 * Math.sin(rig.time * 4.8);
+
+  if (isPouring) {
+    rig.oilSpawnAccum += safeDt;
+    const spawnInterval = 0.0075; // High-density overlapping emission (~133 packets/sec)
+    while (rig.oilSpawnAccum >= spawnInterval) {
+      rig.oilSpawnAccum -= spawnInterval;
+      const slot = rig.oilDroplets.find((d) => !d.active);
+      if (!slot) break;
+      slot.active = true;
+      slot.age = 0;
+      slot.life = 1.35;
+      // Coherent travelling pressure pulses produce thick globs connected by stretched viscous ligaments
+      const pulse = 0.5 + 0.5 * Math.sin(rig.time * 13.5);
+      slot.radius = 0.0062 + 0.0038 * pulse;
+      slot.elongation = 5.2 + 2.8 * (1.0 - pulse);
+      const swayX = Math.sin(rig.time * 5.2) * 0.0022;
+      const swayY = Math.cos(rig.time * 6.0) * 0.0018;
+      slot.pos.set(0.6325 + swayX, 0.785 + swayY, nozzleTipZ - 0.004);
+      const jetSpeed = 1.34 + 0.10 * pumpWave;
+      slot.vel.set(
+        Math.sin(rig.time * 4.6) * 0.032,
+        0.038 + Math.cos(rig.time * 5.4) * 0.015,
+        -jetSpeed
+      );
     }
+  }
 
-    const nozzleTipZ = rig.leftOilNozzle.position.z - 0.036;
-    const isPouring = state.oilSlick && rig.oilLidOpen > 0.65;
-    // Smooth, heavy high-viscosity pump pressure wave (continuous cohesive flow, never chopped up)
-    const pumpWave = 0.5 + 0.5 * Math.sin(rig.time * 4.2) + 0.25 * Math.sin(rig.time * 9.6);
+  rig.oilImpact.z += safeDt;
 
-    rig.oilBlobMat.uniforms.uTime.value = rig.time;
-    rig.oilFilamentMesh.position.z = nozzleTipZ + 0.008;
-    rig.oilFilamentMat.uniforms.uTime.value = rig.time;
-    rig.oilFilamentMat.uniforms.uActive.value +=
-      ((isPouring ? 1 : 0) - rig.oilFilamentMat.uniforms.uActive.value) * Math.min(1, safeDt * 9);
-    rig.oilFilamentMat.uniforms.uLength.value = 0.78 + 0.20 * Math.sin(rig.time * 4.8);
-
-    if (isPouring) {
-      rig.oilSpawnAccum += safeDt;
-      const spawnInterval = 0.0075; // High-density overlapping emission (~133 packets/sec)
-      while (rig.oilSpawnAccum >= spawnInterval) {
-        rig.oilSpawnAccum -= spawnInterval;
-        const slot = rig.oilDroplets.find((d) => !d.active);
-        if (!slot) break;
-        slot.active = true;
-        slot.age = 0;
-        slot.life = 1.35;
-        // Coherent travelling pressure pulses produce thick globs connected by stretched viscous ligaments
-        const pulse = 0.5 + 0.5 * Math.sin(rig.time * 13.5);
-        slot.radius = 0.0062 + 0.0038 * pulse;
-        slot.elongation = 5.2 + 2.8 * (1.0 - pulse);
-        const swayX = Math.sin(rig.time * 5.2) * 0.0022;
-        const swayY = Math.cos(rig.time * 6.0) * 0.0018;
-        slot.pos.set(0.6325 + swayX, 0.785 + swayY, nozzleTipZ - 0.004);
-        const jetSpeed = 1.34 + 0.10 * pumpWave;
-        slot.vel.set(
-          Math.sin(rig.time * 4.6) * 0.032,
-          0.038 + Math.cos(rig.time * 5.4) * 0.015,
-          -jetSpeed
-        );
-      }
-    }
-
-    rig.oilImpact.z += safeDt;
-
-    for (let i = 0; i < rig.oilDroplets.length; i++) {
-      const d = rig.oilDroplets[i];
-      if (d.active) {
-        d.age += safeDt;
-        d.vel.y -= 3.8 * safeDt;
-        d.pos.addScaledVector(d.vel, safeDt);
-        if (d.pos.y <= 0.025 || d.age >= d.life) {
-          if (d.pos.y <= 0.025) {
-            rig.oilImpact.set(d.pos.x, d.pos.z, 0);
-            let merged = false;
-            for (const mb of rig.oilMetaballs) {
-              if (mb.active && Math.hypot(mb.x - d.pos.x, mb.z - d.pos.z) < 0.16) {
-                mb.r = Math.min(0.32, Math.hypot(mb.r, d.radius * 1.55));
-                mb.vx += (d.vel.x * 0.06 + (Math.random() - 0.5) * 0.03);
-                mb.vz -= 0.018;
-                merged = true;
-                break;
-              }
-            }
-            if (!merged) {
-              const freeMb = rig.oilMetaballs.find((m) => !m.active);
-              if (freeMb) {
-                freeMb.active = true;
-                freeMb.x = d.pos.x;
-                freeMb.z = d.pos.z;
-                freeMb.vx = (Math.random() - 0.5) * 0.06;
-                freeMb.vz = -0.055 - Math.random() * 0.04;
-                freeMb.r = 0.065 + Math.random() * 0.025;
-              }
+  for (let i = 0; i < rig.oilDroplets.length; i++) {
+    const d = rig.oilDroplets[i];
+    if (d.active) {
+      d.age += safeDt;
+      d.vel.y -= 3.8 * safeDt;
+      d.pos.addScaledVector(d.vel, safeDt);
+      if (d.pos.y <= 0.025 || d.age >= d.life) {
+        if (d.pos.y <= 0.025) {
+          rig.oilImpact.set(d.pos.x, d.pos.z, 0);
+          let merged = false;
+          for (const mb of rig.oilMetaballs) {
+            if (mb.active && Math.hypot(mb.x - d.pos.x, mb.z - d.pos.z) < 0.16) {
+              mb.r = Math.min(0.32, Math.hypot(mb.r, d.radius * 1.55));
+              mb.vx += (d.vel.x * 0.06 + (Math.random() - 0.5) * 0.03);
+              mb.vz -= 0.018;
+              merged = true;
+              break;
             }
           }
-          d.active = false;
-          _dummyObj.position.set(0, -10, 0);
-          _dummyObj.scale.setScalar(0.0001);
-        } else {
-          _dummyObj.position.copy(d.pos);
-          _dummyObj.lookAt(d.pos.clone().add(d.vel));
-          // High-viscosity liquid columns stretch smoothly along their parabolic trajectory and swell near impact
-          const flightProgress = THREE.MathUtils.clamp(d.age / 0.65, 0, 1);
-          const rDynamic = d.radius * THREE.MathUtils.lerp(0.95, 1.18, flightProgress);
-          const lenDynamic = d.radius * d.elongation * THREE.MathUtils.lerp(1.15, 0.78, flightProgress);
-          _dummyObj.scale.set(rDynamic, rDynamic, lenDynamic);
+          if (!merged) {
+            const freeMb = rig.oilMetaballs.find((m) => !m.active);
+            if (freeMb) {
+              freeMb.active = true;
+              freeMb.x = d.pos.x;
+              freeMb.z = d.pos.z;
+              freeMb.vx = (Math.random() - 0.5) * 0.06;
+              freeMb.vz = -0.055 - Math.random() * 0.04;
+              freeMb.r = 0.065 + Math.random() * 0.025;
+            }
+          }
         }
-      } else {
+        d.active = false;
         _dummyObj.position.set(0, -10, 0);
         _dummyObj.scale.setScalar(0.0001);
-      }
-      _dummyObj.updateMatrix();
-      rig.oilBlobInstanced.setMatrixAt(i, _dummyObj.matrix);
-    }
-    rig.oilBlobInstanced.instanceMatrix.needsUpdate = true;
-
-    // Slowly creeping high-viscosity damped metaballs on the ground
-    const ballUniforms = rig.oilPuddleMat.uniforms.uBalls.value as THREE.Vector4[];
-    const damp = Math.exp(-4.2 * safeDt);
-    for (let i = 0; i < rig.oilMetaballs.length; i++) {
-      const mb = rig.oilMetaballs[i];
-      if (mb.active) {
-        mb.vx *= damp;
-        mb.vz *= damp;
-        mb.x += mb.vx * safeDt;
-        mb.z += mb.vz * safeDt;
-        if (!state.oilSlick) {
-          mb.r -= 0.045 * safeDt;
-          if (mb.r <= 0.002) {
-            mb.active = false;
-            mb.r = 0;
-          }
-        }
-        ballUniforms[i].set(mb.x, mb.z, mb.r, 0);
       } else {
-        ballUniforms[i].set(0, -10, 0, 0);
+        _dummyObj.position.copy(d.pos);
+        _dummyObj.lookAt(d.pos.clone().add(d.vel));
+        // High-viscosity liquid columns stretch smoothly along their parabolic trajectory and swell near impact
+        const flightProgress = THREE.MathUtils.clamp(d.age / 0.65, 0, 1);
+        const rDynamic = d.radius * THREE.MathUtils.lerp(0.95, 1.18, flightProgress);
+        const lenDynamic = d.radius * d.elongation * THREE.MathUtils.lerp(1.15, 0.78, flightProgress);
+        _dummyObj.scale.set(rDynamic, rDynamic, lenDynamic);
       }
+    } else {
+      _dummyObj.position.set(0, -10, 0);
+      _dummyObj.scale.setScalar(0.0001);
     }
-    rig.oilPuddleMat.uniforms.uTime.value = rig.time;
+    _dummyObj.updateMatrix();
+    rig.oilBlobInstanced.setMatrixAt(i, _dummyObj.matrix);
+  }
+  rig.oilBlobInstanced.instanceMatrix.needsUpdate = true;
 
-    // 5C. Right Taillight Hinge & 4-Sided Steel Caltrop Dispenser
-    rig.caltropLidOpen += ((state.caltrops ? 1 : 0) - rig.caltropLidOpen) * Math.min(1, safeDt * 7.5);
-    rig.rightCaltropPivot.rotation.x = -rig.caltropLidOpen * 1.65; // Flips entire right cluster ~95° down
-
-    let caltropSpawnBudget = state.caltrops && rig.caltropLidOpen > 0.65 ? 2 : 0;
-    for (let i = 0; i < rig.caltrops.length; i++) {
-      const c = rig.caltrops[i];
-      if (!c.active && caltropSpawnBudget > 0) {
-        caltropSpawnBudget--;
-        c.active = true;
-        c.settled = false;
-        c.age = 0;
-        c.life = 5.5 + Math.random() * 2.0;
-        c.pos.set(-0.6325 + (Math.random() - 0.5) * 0.025, 0.68, -2.19);
-        c.vel.set(
-          (Math.random() - 0.5) * 0.55,
-          0.15 + Math.random() * 0.35,
-          -(1.8 + Math.random() * 1.4)
-        );
-        c.rot.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
-        c.angVel.set((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14);
+  // Slowly creeping high-viscosity damped metaballs on the ground
+  const ballUniforms = rig.oilPuddleMat.uniforms.uBalls.value as THREE.Vector4[];
+  const damp = Math.exp(-4.2 * safeDt);
+  for (let i = 0; i < rig.oilMetaballs.length; i++) {
+    const mb = rig.oilMetaballs[i];
+    if (mb.active) {
+      mb.vx *= damp;
+      mb.vz *= damp;
+      mb.x += mb.vx * safeDt;
+      mb.z += mb.vz * safeDt;
+      if (!state.oilSlick) {
+        mb.r -= 0.045 * safeDt;
+        if (mb.r <= 0.002) {
+          mb.active = false;
+          mb.r = 0;
+        }
       }
+      ballUniforms[i].set(mb.x, mb.z, mb.r, 0);
+    } else {
+      ballUniforms[i].set(0, -10, 0, 0);
+    }
+  }
+  rig.oilPuddleMat.uniforms.uTime.value = rig.time;
 
-      if (c.active) {
-        c.age += safeDt;
-        if (c.age >= c.life && !state.caltrops) {
-          c.active = false;
-        } else if (!c.settled) {
-          c.vel.y -= 6.5 * safeDt;
-          c.pos.addScaledVector(c.vel, safeDt);
-          c.rot.x += c.angVel.x * safeDt;
-          c.rot.y += c.angVel.y * safeDt;
-          c.rot.z += c.angVel.z * safeDt;
-          if (c.pos.y <= 0.029) {
-            c.pos.y = 0.029;
-            if (Math.abs(c.vel.y) > 0.45) {
-              c.vel.y = -c.vel.y * 0.32;
-              c.vel.x *= 0.6;
-              c.vel.z *= 0.6;
-            } else {
-              c.settled = true;
-              // Settle flat with 1 spike pointing straight up
-              c.rot.set(0, Math.random() * Math.PI * 2, 0);
-            }
+  // 5C. Right Taillight Hinge & 4-Sided Steel Caltrop Dispenser
+  rig.caltropLidOpen += ((state.caltrops ? 1 : 0) - rig.caltropLidOpen) * Math.min(1, safeDt * 7.5);
+  rig.rightCaltropPivot.rotation.x = -rig.caltropLidOpen * 1.65; // Flips entire right cluster ~95° down
+
+  let caltropSpawnBudget = state.caltrops && rig.caltropLidOpen > 0.65 ? 2 : 0;
+  for (let i = 0; i < rig.caltrops.length; i++) {
+    const c = rig.caltrops[i];
+    if (!c.active && caltropSpawnBudget > 0) {
+      caltropSpawnBudget--;
+      c.active = true;
+      c.settled = false;
+      c.age = 0;
+      c.life = 5.5 + Math.random() * 2.0;
+      c.pos.set(-0.6325 + (Math.random() - 0.5) * 0.025, 0.68, -2.19);
+      c.vel.set(
+        (Math.random() - 0.5) * 0.55,
+        0.15 + Math.random() * 0.35,
+        -(1.8 + Math.random() * 1.4)
+      );
+      c.rot.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+      c.angVel.set((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14);
+    }
+
+    if (c.active) {
+      c.age += safeDt;
+      if (c.age >= c.life && !state.caltrops) {
+        c.active = false;
+      } else if (!c.settled) {
+        c.vel.y -= 6.5 * safeDt;
+        c.pos.addScaledVector(c.vel, safeDt);
+        c.rot.x += c.angVel.x * safeDt;
+        c.rot.y += c.angVel.y * safeDt;
+        c.rot.z += c.angVel.z * safeDt;
+        if (c.pos.y <= 0.029) {
+          c.pos.y = 0.029;
+          if (Math.abs(c.vel.y) > 0.45) {
+            c.vel.y = -c.vel.y * 0.32;
+            c.vel.x *= 0.6;
+            c.vel.z *= 0.6;
+          } else {
+            c.settled = true;
+            // Settle flat with 1 spike pointing straight up
+            c.rot.set(0, Math.random() * Math.PI * 2, 0);
           }
         }
-        if (c.active) {
-          _dummyObj.position.copy(c.pos);
-          _dummyObj.rotation.copy(c.rot);
-          _dummyObj.scale.setScalar(1);
-        } else {
-          _dummyObj.position.set(0, -10, 0);
-          _dummyObj.scale.setScalar(0.001);
-        }
+      }
+      if (c.active) {
+        _dummyObj.position.copy(c.pos);
+        _dummyObj.rotation.copy(c.rot);
+        _dummyObj.scale.setScalar(1);
       } else {
         _dummyObj.position.set(0, -10, 0);
         _dummyObj.scale.setScalar(0.001);
       }
-      _dummyObj.updateMatrix();
-      rig.caltropInstanced.setMatrixAt(i, _dummyObj.matrix);
+    } else {
+      _dummyObj.position.set(0, -10, 0);
+      _dummyObj.scale.setScalar(0.001);
     }
-    rig.caltropInstanced.instanceMatrix.needsUpdate = true;
+    _dummyObj.updateMatrix();
+    rig.caltropInstanced.setMatrixAt(i, _dummyObj.matrix);
   }
+  rig.caltropInstanced.instanceMatrix.needsUpdate = true;
+}
