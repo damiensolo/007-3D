@@ -913,7 +913,7 @@ export function createQBranchGadgetsRig(
   // --- 5A. LEFT TAILLIGHT (+X): Hinged Amber Lamp + Internal Oil Pump & Nozzle ---
   const leftOilLampPivot = new THREE.Group();
   leftOilLampPivot.position.copy(
-    tailLightSplits?.leftTopPivotPos ?? new THREE.Vector3(0.6325, 0.828, -2.168)
+    tailLightSplits?.leftTopPivotPos ?? new THREE.Vector3(0.6325, 0.812, -2.172)
   );
   root.add(leftOilLampPivot);
 
@@ -924,99 +924,206 @@ export function createQBranchGadgetsRig(
         'Left Amber Indicator (Oil Nozzle Cover)',
         'Hinged Lucas Amber Lamp',
         'Top-hinged left rear amber indicator lifting 75° to expose the pressurized oil slick nozzle.',
-        [0.85, 0.35, -1.25]
+        [0.88, 0.25, -1.15]
       );
       leftOilLampPivot.add(m);
     }
   }
+
+  // Sealed cylindrical dark-anodized backing cup mounted flush behind the amber indicator chrome bezel
+  const lampBackCup = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.041, 0.039, 0.012, 32),
+    gunmetalMat
+  );
+  lampBackCup.rotation.x = Math.PI / 2;
+  lampBackCup.position.set(0, -0.042, 0.002);
+  leftOilLampPivot.add(lampBackCup);
 
   const cavityMat = new THREE.MeshStandardMaterial({
     color: 0x090b0f,
     roughness: 0.85,
     metalness: 0.2,
   });
-  const leftCavity = new THREE.Mesh(new THREE.BoxGeometry(0.068, 0.080, 0.065), cavityMat);
-  leftCavity.position.set(0.6325, 0.785, -2.150);
-  root.add(leftCavity);
 
-  const leftOilArms: THREE.Mesh[] = [];
-  for (const sx of [0.614, 0.650]) {
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.006, 0.036), chromeMat);
-    arm.position.set(sx - 0.6325, -0.012, 0.002);
-    arm.visible = false;
-    leftOilLampPivot.add(arm);
-    leftOilArms.push(arm);
-  }
-
-  // Hollow machined dispensing pipe (LatheGeometry with real inner bore facing -Z)
-  const nozzlePipeGeo = new THREE.LatheGeometry(
-    [
-      new THREE.Vector2(0.0125, -0.0375),
-      new THREE.Vector2(0.0125, 0.022),
-      new THREE.Vector2(0.0108, 0.026),
-      new THREE.Vector2(0.0108, 0.0365),
-      new THREE.Vector2(0.0092, 0.0375),
-      new THREE.Vector2(0.0056, 0.0375),
-      new THREE.Vector2(0.0052, -0.015),
-      new THREE.Vector2(0.0, -0.015),
-    ],
-    24
-  );
-  const leftOilNozzle = register(
-    new THREE.Mesh(nozzlePipeGeo, chromeMat),
-    'Left Taillight Oil Slick Nozzle',
-    'Machined Hollow Aluminum Pipe',
-    'Retractable hollow high-pressure oil dispensing pipe concealed behind the hinged left amber indicator.',
-    [0.88, 0.25, -1.22]
-  );
-  leftOilNozzle.rotation.x = -Math.PI / 2; // +Y hollow tip points toward -Z (rear)
-  leftOilNozzle.position.set(0.6325, 0.785, -2.165);
-  root.add(leftOilNozzle);
-
+  // Recessed Cylindrical Nozzle Well Housing (replaces raw black BoxGeometry, seamlessly joins the rear bulkhead manifold)
   const aluFrameMat = new THREE.MeshStandardMaterial({
     color: 0xcbd5e1,
     metalness: 0.86,
     roughness: 0.26,
   });
-  const oilRackFrame = register(
-    new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.20, 0.064), aluFrameMat),
-    'Q-Branch Oil Pump Mounting Frame',
-    'Slotted Machined Aluminum',
-    'Internal left-wing structural frame supporting the hydraulic oil pump and upper nozzle.',
-    [0.92, 0.20, -1.10]
+
+  const leftWellGroup = new THREE.Group();
+  leftWellGroup.position.set(0.6325, 0.770, -2.155);
+  const wellOuterShell = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.040, 0.040, 0.044, 32),
+    gunmetalMat
   );
-  oilRackFrame.position.set(0.585, 0.68, -2.06);
+  wellOuterShell.rotation.x = Math.PI / 2;
+  leftWellGroup.add(wellOuterShell);
+
+  const wellChromeRim = new THREE.Mesh(
+    new THREE.TorusGeometry(0.039, 0.0025, 12, 32),
+    chromeMat
+  );
+  wellChromeRim.position.set(0, 0, -0.021);
+  leftWellGroup.add(wellChromeRim);
+
+  const wellInnerRecess = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.035, 0.035, 0.042, 28),
+    cavityMat
+  );
+  wellInnerRecess.rotation.x = Math.PI / 2;
+  wellInnerRecess.position.set(0, 0, -0.002);
+  leftWellGroup.add(wellInnerRecess);
+  root.add(leftWellGroup);
+
+  const leftOilArms: THREE.Mesh[] = [];
+  for (const sx of [0.614, 0.651]) {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.005, 0.028), chromeMat);
+    arm.position.set(sx - 0.6325, -0.008, 0.004);
+    arm.visible = false;
+    leftOilLampPivot.add(arm);
+    leftOilArms.push(arm);
+  }
+
+  // Hollow machined dispensing pipe (LatheGeometry with real inner bore facing -Z, centered on the top amber lamp axis y = 0.770)
+  const nozzlePipeGeo = new THREE.LatheGeometry(
+    [
+      new THREE.Vector2(0.0135, -0.042),
+      new THREE.Vector2(0.0135, 0.018),
+      new THREE.Vector2(0.0112, 0.023),
+      new THREE.Vector2(0.0112, 0.0365),
+      new THREE.Vector2(0.0094, 0.0375),
+      new THREE.Vector2(0.0056, 0.0375),
+      new THREE.Vector2(0.0052, -0.015),
+      new THREE.Vector2(0.0, -0.015),
+    ],
+    28
+  );
+  const leftOilNozzle = register(
+    new THREE.Mesh(nozzlePipeGeo, chromeMat),
+    'Left Taillight Oil Slick Nozzle',
+    'Machined Hollow Aluminum Pipe',
+    'Retractable hollow high-pressure oil dispensing pipe concealed inside the cylindrical left amber lamp recess.',
+    [0.88, 0.25, -1.15]
+  );
+  leftOilNozzle.rotation.x = -Math.PI / 2; // +Y hollow tip points toward -Z (rear)
+  leftOilNozzle.position.set(0.6325, 0.770, -2.165);
+  root.add(leftOilNozzle);
+
+  // Cohesive Machined Q-Branch Oil Pump & Manifold Assembly (tucked cleanly inside the rear left fender cavity at x <= 0.56)
+  // Uses a shared semanticDir so the entire pump, rack, and braided hose explode together as one connected mechanical unit!
+  const oilUnitSemanticDir: [number, number, number] = [0.88, 0.25, -1.15];
+
+  const rackGeo = new THREE.BoxGeometry(0.048, 0.195, 0.058);
+  // Add upper manifold neck and lower pump cradle bosses directly into the rack mesh
+  const oilRackFrame = register(
+    new THREE.Mesh(rackGeo, aluFrameMat),
+    'Q-Branch Oil Pump Mounting Frame',
+    'CNC-Machined Billet Aluminum Bulkhead',
+    'Internal left-wing structural bulkhead supporting the pressurized oil pump, hex fittings, and upper nozzle well.',
+    oilUnitSemanticDir
+  );
+  oilRackFrame.position.set(0.578, 0.695, -2.112);
+
+  // Upper horizontal manifold block connecting the bulkhead column cleanly to the rear of the cylindrical nozzle well
+  const upperManifold = new THREE.Mesh(
+    new THREE.BoxGeometry(0.088, 0.046, 0.048),
+    aluFrameMat
+  );
+  upperManifold.position.set(0.026, 0.075, -0.020);
+  oilRackFrame.add(upperManifold);
+
+  // Brass AN-8 hex bulkhead inlet fitting on the upper manifold where the braided hose terminates
+  const upperHexFitting = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.012, 0.012, 0.024, 6),
+    brassMat
+  );
+  upperHexFitting.rotation.x = Math.PI / 2;
+  upperHexFitting.position.set(-0.014, 0.075, 0.018);
+  oilRackFrame.add(upperHexFitting);
+
+  // Twin machined mounting clamps holding the pressurized cylinder to the vertical bulkhead
+  for (const cz of [0.025, 0.085]) {
+    const clampCollar = new THREE.Mesh(
+      new THREE.BoxGeometry(0.044, 0.022, 0.018),
+      gunmetalMat
+    );
+    clampCollar.position.set(-0.008, -0.058, cz);
+    oilRackFrame.add(clampCollar);
+  }
   root.add(oilRackFrame);
 
   const oilPumpCylinder = register(
-    new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.135, 20), aluFrameMat),
+    new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.145, 24), aluFrameMat),
     'Pressurized Oil Slick Pump Cylinder',
     'Turned Aluminum & Brass Manifold',
-    'High-pressure hydraulic pump driving slick oil up the braided hose to the left taillight.',
-    [0.95, 0.16, -1.05]
+    'High-pressure hydraulic accumulator and pump driving slick oil through the braided line to the taillight nozzle.',
+    oilUnitSemanticDir
   );
   oilPumpCylinder.rotation.x = Math.PI / 2;
-  oilPumpCylinder.position.set(0.582, 0.635, -1.97);
+  oilPumpCylinder.position.set(0.564, 0.635, -2.035);
+
+  // Front & rear turned gunmetal end-caps + top brass AN-8 outlet fitting on the pump cylinder (local +Y is world +Z)
+  const frontEndCap = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.0255, 0.0255, 0.014, 24),
+    gunmetalMat
+  );
+  frontEndCap.position.set(0, 0.068, 0);
+  oilPumpCylinder.add(frontEndCap);
+
+  const rearEndCap = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.0255, 0.0255, 0.014, 24),
+    gunmetalMat
+  );
+  rearEndCap.position.set(0, -0.068, 0);
+  oilPumpCylinder.add(rearEndCap);
+
+  const lowerHexFitting = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.012, 0.012, 0.022, 6),
+    brassMat
+  );
+  lowerHexFitting.rotation.x = -Math.PI / 2; // points upward in world Y (local -Z)
+  lowerHexFitting.position.set(0, 0.052, -0.026);
+  oilPumpCylinder.add(lowerHexFitting);
   root.add(oilPumpCylinder);
 
+  // Closed-cap braided hydraulic hose routing smoothly from the pump's brass outlet fitting to the upper manifold's brass inlet fitting
   const hoseCurve = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(0.582, 0.655, -1.91),
-    new THREE.Vector3(0.585, 0.745, -1.95),
-    new THREE.Vector3(0.625, 0.785, -2.12),
+    new THREE.Vector3(0.564, 0.655, -1.983),
+    new THREE.Vector3(0.564, 0.725, -1.972),
+    new THREE.Vector3(0.564, 0.768, -2.018),
+    new THREE.Vector3(0.564, 0.770, -2.088),
   ]);
   const oilHose = register(
-    new THREE.Mesh(new THREE.TubeGeometry(hoseCurve, 16, 0.0085, 10, false), rubberPadMat),
+    new THREE.Mesh(new THREE.TubeGeometry(hoseCurve, 28, 0.0082, 14, false), rubberPadMat),
     'High-Pressure Oil Feed Hose',
     'Reinforced Braided Hydraulic Line',
-    'Pressurized feed line routing oil from the wing pump to the hinged taillight nozzle.',
-    [0.94, 0.22, -1.08]
+    'Pressurized hydraulic feed line with swaged brass ferrules connecting the pump cylinder to the upper nozzle manifold.',
+    oilUnitSemanticDir
   );
+  // Swaged chrome hose ferrules sealing both ends of the tube so there is zero open geometry
+  const ferruleLower = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.0102, 0.0102, 0.016, 14),
+    chromeMat
+  );
+  ferruleLower.position.set(0.564, 0.662, -1.983);
+  oilHose.add(ferruleLower);
+
+  const ferruleUpper = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.0102, 0.0102, 0.016, 14),
+    chromeMat
+  );
+  ferruleUpper.rotation.x = Math.PI / 2;
+  ferruleUpper.position.set(0.564, 0.770, -2.085);
+  oilHose.add(ferruleUpper);
   root.add(oilHose);
 
   // --- 5B. RIGHT TAILLIGHT (-X): Bottom-Hinged Cluster + Caltrop / Nail Dispenser ---
+  const caltropUnitSemanticDir: [number, number, number] = [-0.88, 0.25, -1.15];
   const rightCaltropPivot = new THREE.Group();
   rightCaltropPivot.position.copy(
-    tailLightSplits?.rightClusterPivotPos ?? new THREE.Vector3(-0.6325, 0.578, -2.172)
+    tailLightSplits?.rightClusterPivotPos ?? new THREE.Vector3(-0.6325, 0.556, -2.172)
   );
   root.add(rightCaltropPivot);
 
@@ -1027,40 +1134,87 @@ export function createQBranchGadgetsRig(
         'Right Taillight Cluster (Caltrop Hatch)',
         'Bottom-Hinged Lucas Cluster',
         'Entire 3-lens right taillight assembly hinged at the bottom to drop open and release road caltrops.',
-        [-0.85, 0.25, -1.25]
+        caltropUnitSemanticDir
       );
       rightCaltropPivot.add(m);
     }
   }
 
-  const rightCavity = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.235, 0.075), cavityMat);
-  rightCavity.position.set(-0.6325, 0.704, -2.148);
-  root.add(rightCavity);
+  // Contoured stadium-profile backing plate behind the 3-lens right taillight cluster
+  for (const ly of [0.042, 0.128, 0.214]) {
+    const clusterBackCup = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.041, 0.039, 0.012, 28),
+      gunmetalMat
+    );
+    clusterBackCup.rotation.x = Math.PI / 2;
+    clusterBackCup.position.set(0, ly, 0.002);
+    rightCaltropPivot.add(clusterBackCup);
+  }
 
-  const rightHinge = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.068, 12), chromeMat);
+  // Contoured recessed caltrop housing behind the right taillight cluster
+  const rightHousingGroup = new THREE.Group();
+  rightHousingGroup.position.set(-0.6325, 0.684, -2.155);
+  for (const wy of [-0.086, 0.0, 0.086]) {
+    const wellShell = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.040, 0.040, 0.044, 28),
+      gunmetalMat
+    );
+    wellShell.rotation.x = Math.PI / 2;
+    wellShell.position.set(0, wy, 0);
+    rightHousingGroup.add(wellShell);
+
+    const wellInner = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.035, 0.035, 0.042, 24),
+      cavityMat
+    );
+    wellInner.rotation.x = Math.PI / 2;
+    wellInner.position.set(0, wy, -0.002);
+    rightHousingGroup.add(wellInner);
+  }
+  root.add(rightHousingGroup);
+
+  const rightHinge = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.056, 12), chromeMat);
   rightHinge.rotation.z = Math.PI / 2;
   rightCaltropPivot.add(rightHinge);
 
   const caltropHopper = register(
-    new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.20, 0.085), aluFrameMat),
+    new THREE.Mesh(new THREE.BoxGeometry(0.054, 0.195, 0.072), aluFrameMat),
     'Caltrop Magazine & Ejector Rack',
     'Machined Aluminum Hopper',
-    'Internal right-wing vertical magazine feeding 4-sided steel tire-shredding caltrops.',
-    [-0.92, 0.20, -1.10]
+    'Internal right-wing vertical magazine feeding 4-sided steel tire-shredding caltrops into the twin launch chutes.',
+    caltropUnitSemanticDir
   );
-  caltropHopper.position.set(-0.6325, 0.70, -2.06);
+  caltropHopper.position.set(-0.585, 0.684, -2.095);
+  const hopperNeck = new THREE.Mesh(
+    new THREE.BoxGeometry(0.075, 0.16, 0.045),
+    gunmetalMat
+  );
+  hopperNeck.position.set(-0.028, 0, -0.038);
+  caltropHopper.add(hopperNeck);
   root.add(caltropHopper);
 
+  // Hollow machined caltrop launch chutes (LatheGeometry with dark recessed inner bore)
+  const chuteGeo = new THREE.LatheGeometry(
+    [
+      new THREE.Vector2(0.0135, -0.045),
+      new THREE.Vector2(0.0135, 0.045),
+      new THREE.Vector2(0.0115, 0.046),
+      new THREE.Vector2(0.0095, 0.046),
+      new THREE.Vector2(0.0090, -0.035),
+      new THREE.Vector2(0.0, -0.035),
+    ],
+    20
+  );
   for (const cx of [-0.646, -0.619]) {
     const chute = register(
-      new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.095, 14), gunmetalMat),
+      new THREE.Mesh(chuteGeo, gunmetalMat),
       'Caltrop Ejector Chute',
       'Hardened Steel Launch Tube',
-      'Spring-loaded dual launch chute expelling four-sided caltrops onto the road behind.',
-      [-0.90, 0.22, -1.20]
+      'Spring-loaded dual hollow launch chute expelling four-sided caltrops onto the road behind.',
+      caltropUnitSemanticDir
     );
-    chute.rotation.x = Math.PI / 2 + 0.14;
-    chute.position.set(cx, 0.675, -2.14);
+    chute.rotation.x = -Math.PI / 2 + 0.12;
+    chute.position.set(cx, 0.675, -2.138);
     root.add(chute);
   }
 
@@ -1359,7 +1513,7 @@ export function createQBranchGadgetsRig(
       `,
   });
   const oilFilamentMesh = new THREE.Mesh(filGeo, oilFilamentMat);
-  oilFilamentMesh.position.set(0.6325, 0.785, -2.250);
+  oilFilamentMesh.position.set(0.6325, 0.770, -2.250);
   oilFilamentMesh.renderOrder = 2;
   root.add(oilFilamentMesh);
 
@@ -1809,7 +1963,7 @@ export function updateQBranchGadgetsRig(
       slot.elongation = 5.2 + 2.8 * (1.0 - pulse);
       const swayX = Math.sin(rig.time * 5.2) * 0.0022;
       const swayY = Math.cos(rig.time * 6.0) * 0.0018;
-      slot.pos.set(0.6325 + swayX, 0.785 + swayY, nozzleTipZ - 0.004);
+      slot.pos.set(0.6325 + swayX, 0.770 + swayY, nozzleTipZ - 0.004);
       const jetSpeed = 1.34 + 0.10 * pumpWave;
       slot.vel.set(
         Math.sin(rig.time * 4.6) * 0.032,

@@ -1297,8 +1297,8 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
           if (extracted) passengerSeatMeshes.push(extracted);
         }
 
-        const leftTopPivotPos = new THREE.Vector3(0.6325, 0.828, -2.168);
-        const rightClusterPivotPos = new THREE.Vector3(-0.6325, 0.578, -2.172);
+        const leftTopPivotPos = new THREE.Vector3(0.6325, 0.812, -2.172);
+        const rightClusterPivotPos = new THREE.Vector3(-0.6325, 0.556, -2.172);
         const leftTopMeshes: THREE.Mesh[] = [];
         const rightClusterMeshes: THREE.Mesh[] = [];
 
@@ -1309,11 +1309,78 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
           const uvAttr = geo.attributes.uv;
           if (!posAttr) continue;
 
+          lightMesh.updateMatrixWorld(true);
           const normalMat = new THREE.Matrix3().getNormalMatrix(lightMesh.matrixWorld);
           const v0 = new THREE.Vector3();
-          const v1 = new THREE.Vector3();
-          const v2 = new THREE.Vector3();
           const nTmp = new THREE.Vector3();
+
+          // Build spatial + topological connected components across vertices so each Lucas lens, reflector bowl,
+          // chrome bezel, and lens screw stays 100% intact (never sliced by a raw Y threshold)
+          const vCount = posAttr.count;
+          const worldPts: THREE.Vector3[] = new Array(vCount);
+          const weldMap = new Map<string, number[]>();
+          for (let vi = 0; vi < vCount; vi++) {
+            const p = new THREE.Vector3().fromBufferAttribute(posAttr, vi).applyMatrix4(lightMesh.matrixWorld);
+            worldPts[vi] = p;
+            const key = `${Math.round(p.x * 10000)},${Math.round(p.y * 10000)},${Math.round(p.z * 10000)}`;
+            const bucket = weldMap.get(key);
+            if (bucket) bucket.push(vi);
+            else weldMap.set(key, [vi]);
+          }
+
+          const adj: number[][] = Array.from({ length: vCount }, () => []);
+          for (const bucket of weldMap.values()) {
+            for (let i = 1; i < bucket.length; i++) {
+              adj[bucket[0]].push(bucket[i]);
+              adj[bucket[i]].push(bucket[0]);
+            }
+          }
+
+          const triCount = geo.index ? geo.index.count / 3 : posAttr.count / 3;
+          for (let t = 0; t < triCount; t++) {
+            const i0 = geo.index ? geo.index.getX(t * 3) : t * 3;
+            const i1 = geo.index ? geo.index.getX(t * 3 + 1) : t * 3 + 1;
+            const i2 = geo.index ? geo.index.getX(t * 3 + 2) : t * 3 + 2;
+            adj[i0].push(i1, i2);
+            adj[i1].push(i0, i2);
+            adj[i2].push(i0, i1);
+          }
+
+          const compId = new Int32Array(vCount).fill(-1);
+          const compCategory: Array<'leftTop' | 'rightCluster' | 'static'> = [];
+          let cIdx = 0;
+          for (let vi = 0; vi < vCount; vi++) {
+            if (compId[vi] !== -1) continue;
+            const queue = [vi];
+            compId[vi] = cIdx;
+            let minX = Infinity, maxX = -Infinity;
+            let minY = Infinity, maxY = -Infinity;
+            for (let h = 0; h < queue.length; h++) {
+              const u = queue[h];
+              const p = worldPts[u];
+              if (p.x < minX) minX = p.x;
+              if (p.x > maxX) maxX = p.x;
+              if (p.y < minY) minY = p.y;
+              if (p.y > maxY) maxY = p.y;
+              for (const w of adj[u]) {
+                if (compId[w] === -1) {
+                  compId[w] = cIdx;
+                  queue.push(w);
+                }
+              }
+            }
+            const midX = 0.5 * (minX + maxX);
+            const midY = 0.5 * (minY + maxY);
+            if (midX < 0) {
+              compCategory.push('rightCluster');
+            } else if (midY > 0.7265) {
+              // Top amber lamp component sits in y ∈ [0.727, 0.812]; middle red brake lamp is y ∈ [0.641, 0.726]
+              compCategory.push('leftTop');
+            } else {
+              compCategory.push('static');
+            }
+            cIdx++;
+          }
 
           const flipLightWinding = lightMesh.matrixWorld.determinant() < 0;
           const buildExtractedMesh = (tris: Array<[number, number, number]>, pivot: THREE.Vector3): THREE.Mesh | null => {
@@ -1328,7 +1395,7 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
                 ? [tri[0], tri[2], tri[1]]
                 : tri;
               for (const vi of ordered) {
-                v0.fromBufferAttribute(posAttr, vi).applyMatrix4(lightMesh.matrixWorld).sub(pivot);
+                v0.copy(worldPts[vi]).sub(pivot);
                 outPos[pIdx] = v0.x;
                 outPos[pIdx + 1] = v0.y;
                 outPos[pIdx + 2] = v0.z;
@@ -1361,19 +1428,14 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
           const rightTris: Array<[number, number, number]> = [];
           const keptStaticIdx: number[] = [];
 
-          const triCount = geo.index ? geo.index.count / 3 : posAttr.count / 3;
           for (let t = 0; t < triCount; t++) {
             const i0 = geo.index ? geo.index.getX(t * 3) : t * 3;
             const i1 = geo.index ? geo.index.getX(t * 3 + 1) : t * 3 + 1;
             const i2 = geo.index ? geo.index.getX(t * 3 + 2) : t * 3 + 2;
-            v0.fromBufferAttribute(posAttr, i0).applyMatrix4(lightMesh.matrixWorld);
-            v1.fromBufferAttribute(posAttr, i1).applyMatrix4(lightMesh.matrixWorld);
-            v2.fromBufferAttribute(posAttr, i2).applyMatrix4(lightMesh.matrixWorld);
-            const cx = (v0.x + v1.x + v2.x) / 3;
-            const cy = (v0.y + v1.y + v2.y) / 3;
-            if (cx < 0) {
+            const cat = compCategory[compId[i0]];
+            if (cat === 'rightCluster') {
               rightTris.push([i0, i1, i2]);
-            } else if (cy > 0.740) {
+            } else if (cat === 'leftTop') {
               leftTopTris.push([i0, i1, i2]);
             } else {
               keptStaticIdx.push(i0, i1, i2);
