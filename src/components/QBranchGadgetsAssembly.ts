@@ -960,16 +960,16 @@ function buildTetraCaltropGeometry(radius = 0.022): THREE.BufferGeometry {
     for (let i = 0; i < jetPos.count; i++) {
       const u = jetUv.getX(i);
       const center = jetCurve.getPointAt(THREE.MathUtils.clamp(u, 0, 1));
-      const r = THREE.MathUtils.lerp(0.0052, 0.038, Math.pow(u, 1.35));
+      const r = THREE.MathUtils.lerp(0.0052, 0.0155, Math.pow(u, 1.15));
       tmpPt.fromBufferAttribute(jetPos, i).sub(center).multiplyScalar(r).add(center);
       jetPos.setXYZ(i, tmpPt.x, tmpPt.y, tmpPt.z);
     }
     jetGeo.computeVertexNormals();
 
     const oilJetMat = new THREE.ShaderMaterial({
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
+      transparent: false,
+      depthWrite: true,
+      side: THREE.FrontSide,
       uniforms: {
         uTime: { value: 0 },
         uFlow: { value: 0 },
@@ -978,9 +978,18 @@ function buildTetraCaltropGeometry(radius = 0.022): THREE.BufferGeometry {
         varying vec2 vUv;
         varying vec3 vNormal;
         varying vec3 vViewDir;
+        uniform float uTime;
         void main() {
           vUv = uv;
-          vec4 wp = modelMatrix * vec4(position, 1.0);
+          float u = uv.x;
+          float env = smoothstep(0.04, 0.45, u);
+          // Traveling pressure pulses & gentle sinuous sway along the liquid stream
+          float pulse = 1.0 + 0.22 * sin(u * 18.0 - uTime * 8.5) + 0.12 * cos(u * 31.0 - uTime * 13.0);
+          vec3 displaced = position + normal * ((pulse - 1.0) * 0.007 * env);
+          displaced.x += sin(u * 11.0 - uTime * 5.2) * 0.012 * env;
+          displaced.y += cos(u * 9.0 - uTime * 4.6) * 0.007 * env;
+
+          vec4 wp = modelMatrix * vec4(displaced, 1.0);
           vNormal = normalize(mat3(modelMatrix) * normal);
           vViewDir = normalize(cameraPosition - wp.xyz);
           gl_Position = projectionMatrix * viewMatrix * wp;
@@ -1003,25 +1012,26 @@ function buildTetraCaltropGeometry(radius = 0.022): THREE.BufferGeometry {
           );
         }
         void main() {
-          if (uFlow <= 0.01) discard;
+          if (uFlow <= 0.01 || vUv.x > uFlow) discard;
           float u = vUv.x;
-          float reveal = smoothstep(u - 0.08, u + 0.02, uFlow);
-          if (reveal <= 0.01) discard;
 
-          float flowScroll = u * 10.0 - uTime * 3.8;
-          float n1 = noise(vec2(flowScroll, vUv.y * 6.0));
-          float n2 = noise(vec2(flowScroll * 2.1 + 3.7, vUv.y * 12.0));
-          float breakup = mix(1.0, smoothstep(0.22, 0.78, n1 * 0.65 + n2 * 0.35), smoothstep(0.12, 0.85, u));
+          float flowScroll = u * 12.0 - uTime * 5.5;
+          float ripple = noise(vec2(flowScroll, vUv.y * 6.0)) - 0.5;
 
-          float fresnel = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewDir))), 2.2);
-          float coreAlpha = mix(0.92, 0.32, pow(u, 0.9)) * breakup * reveal * (1.0 - smoothstep(0.88, 1.0, u));
-          if (coreAlpha < 0.02) discard;
+          vec3 N = normalize(vNormal + vec3(ripple * 0.14, ripple * 0.08, 0.0));
+          vec3 V = normalize(vViewDir);
+          float fresnel = pow(1.0 - max(dot(N, V), 0.0), 3.2);
 
-          vec3 darkOil = vec3(0.055, 0.048, 0.042);
-          vec3 aeratedMist = vec3(0.42, 0.44, 0.46);
-          vec3 col = mix(darkOil, aeratedMist, smoothstep(0.25, 0.9, u) * 0.65 + fresnel * 0.45);
-          col += vec3(0.85, 0.88, 0.92) * pow(max(0.0, dot(normalize(vNormal), normalize(vec3(0.3, 0.9, 0.3)))), 24.0) * 0.55;
-          gl_FragColor = vec4(col, coreAlpha);
+          vec3 L1 = normalize(vec3(0.35, 0.90, 0.25));
+          float spec1 = pow(max(dot(N, normalize(L1 + V)), 0.0), 64.0);
+          vec3 L2 = normalize(vec3(-0.4, 0.7, -0.5));
+          float spec2 = pow(max(dot(N, normalize(L2 + V)), 0.0), 36.0);
+
+          vec3 deepOil = vec3(0.014, 0.012, 0.010);
+          vec3 amberRim = vec3(0.065, 0.040, 0.016);
+          vec3 col = mix(deepOil, amberRim, fresnel * 0.45);
+          col += vec3(0.95, 0.96, 1.0) * (spec1 * 0.95 + spec2 * 0.45);
+          gl_FragColor = vec4(col, 1.0);
         }
       `,
     });
@@ -1029,8 +1039,8 @@ function buildTetraCaltropGeometry(radius = 0.022): THREE.BufferGeometry {
     oilJetMesh.renderOrder = 2;
     root.add(oilJetMesh);
 
-    // Fine soft-mist aerosol spray around the liquid jet (no solid Tic-Tac spheres)
-    const OIL_COUNT = 200;
+    // Fine opaque glossy oil splatter droplets around the breaking jet
+    const OIL_COUNT = 160;
     const oilDroplets: OilDroplet[] = [];
     const oilPosAttr = new Float32Array(OIL_COUNT * 3);
     const oilAgeAttr = new Float32Array(OIL_COUNT);
@@ -1048,8 +1058,8 @@ function buildTetraCaltropGeometry(radius = 0.022): THREE.BufferGeometry {
     oilMistGeo.setAttribute('position', new THREE.BufferAttribute(oilPosAttr, 3));
     oilMistGeo.setAttribute('aAge', new THREE.BufferAttribute(oilAgeAttr, 1));
     const oilMistMat = new THREE.ShaderMaterial({
-      transparent: true,
-      depthWrite: false,
+      transparent: false,
+      depthWrite: true,
       uniforms: {
         uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
       },
@@ -1061,19 +1071,19 @@ function buildTetraCaltropGeometry(radius = 0.022): THREE.BufferGeometry {
           vAge = aAge;
           vec4 mv = modelViewMatrix * vec4(position, 1.0);
           gl_Position = projectionMatrix * mv;
-          float sz = mix(4.0, 14.0, aAge);
+          float sz = mix(3.2, 6.0, aAge);
           gl_PointSize = sz * uPixelRatio * (1.8 / max(0.4, -mv.z));
         }
       `,
       fragmentShader: `
         varying float vAge;
         void main() {
-          float d = length(gl_PointCoord - 0.5) * 2.0;
-          if (d > 1.0) discard;
-          float soft = pow(1.0 - d, 1.8);
-          float alpha = soft * (1.0 - smoothstep(0.55, 1.0, vAge)) * 0.34;
-          vec3 col = mix(vec3(0.18, 0.17, 0.16), vec3(0.55, 0.57, 0.60), soft * 0.5);
-          gl_FragColor = vec4(col, alpha);
+          vec2 p = gl_PointCoord - 0.5;
+          if (length(p) > 0.48) discard;
+          // Glossy opaque black oil droplet with studio specular glint
+          float glint = smoothstep(0.18, 0.0, length(p - vec2(-0.14, -0.14)));
+          vec3 col = vec3(0.015, 0.013, 0.011) + vec3(0.75, 0.78, 0.82) * glint;
+          gl_FragColor = vec4(col, 1.0);
         }
       `,
     });
@@ -1151,8 +1161,8 @@ function buildTetraCaltropGeometry(radius = 0.022): THREE.BufferGeometry {
 
         float film = n1 * 4.0 + fresnel * 2.2 + length(p) * 2.0;
         vec3 rainbow = 0.5 + 0.5 * cos(film + vec3(0.0, 2.1, 4.2));
-        vec3 baseOil = vec3(0.012, 0.013, 0.016);
-        vec3 col = mix(baseOil, rainbow * 0.45, clamp(fresnel * 0.78 + 0.12, 0.0, 0.52));
+        vec3 baseOil = vec3(0.012, 0.012, 0.014);
+        vec3 col = mix(baseOil, rainbow * 0.22, clamp(fresnel * 0.28 + 0.03, 0.0, 0.16));
         col += vec3(0.95, 0.97, 1.0) * (spec1 * 0.95 + spec2 * 0.6);
 
         gl_FragColor = vec4(col, mask * 0.96 * min(1.0, uSpread * 2.4));
