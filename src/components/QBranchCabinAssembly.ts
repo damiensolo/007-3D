@@ -486,9 +486,9 @@ export function createQBranchCabinRig(
 
   const gearRedButton = register(
     new THREE.Mesh(new THREE.CylinderGeometry(0.0076, 0.0080, 0.011, 24), redButtonMat),
-    'Red Gear-Knob Actuator Button',
+    'Red Ejector Seat Actuator Button',
     'Polished Red Acrylic / Microswitch',
-    'Spring-loaded Q-Branch tactical trigger: press to deploy & fire the twin Browning .30-caliber machine guns.',
+    'Spring-loaded Q-Branch ejector trigger: press to jettison the passenger roof section and launch the passenger ejector seat ("I never joke about my work, 007").',
     [0, 1.08, 0.2],
     { type: 'pressGearButton' }
   );

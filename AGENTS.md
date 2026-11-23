@@ -51,7 +51,10 @@ Always reference these measured world coordinates when placing or modifying Q-Br
 - **Rear Taillights (`SM_Light_B_101`):**
   - **Left Taillight (`+X`, Oil Slick Dispenser):** `x ∈ [0.590, 0.675]`, top amber indicator `y ∈ [0.740, 0.832]`, `z ∈ [-2.218, -2.167]`, top hinge pivot `(0.6325, 0.828, -2.168)`, hollow nozzle centerline `(0.6325, 0.785, -2.165)`, internal wing pump/hose tucked at `x <= 0.585`.
   - **Right Taillight (`-X`, Caltrop / Nail Dispenser):** `x ∈ [-0.675, -0.590]`, full 3-lamp cluster `y ∈ [0.575, 0.832]`, `z ∈ [-2.218, -2.167]`, bottom hinge pivot `(-0.6325, 0.578, -2.172)`.
-- **Roof Panel (`SM_Roof_101_MI_Exhaust_013`):** `x ∈ [-0.592, +0.592]`, `y ∈ [1.250, 1.385]`, `z ∈ [-0.667, +0.300]` (RHD passenger ejector hatch is on `+X`, outer hinge at `x = +0.49, y = 1.325, z = -0.15`).
+- **Roof Panel (`SM_Roof_101_MI_Exhaust_013`) & Passenger Ejector Seat (`SM_Body_101`):**
+  - Roof overall bounds: `x ∈ [-0.592, +0.592]`, `y ∈ [1.250, 1.385]`, `z ∈ [-0.667, +0.300]`.
+  - Jettisonable passenger roof cutout (aligned to `SM_Roof_101` & `MI_Cabin_Leather_C1` headliner vertex grid, never hinged): `x ∈ [0.002, +0.433]`, `z ∈ [-0.430, +0.040]`, center `(0.2175, 1.372, -0.195)`.
+  - Passenger ejector bucket seat & safety harness (`MI_Cabin_Leather_A1`, `MI_Cabin_Belt_A1`, `MI_Cabin1_0` seat rails): `x ∈ [0.055, +0.620]`, `y ∈ [0.290, 0.960]`, `z ∈ [-0.620, +0.285]`, center `(0.34, 0.56, -0.16)`.
 
 ---
 

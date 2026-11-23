@@ -46,6 +46,14 @@ export interface TailLightSplitData {
   rightClusterPivotPos: THREE.Vector3;
 }
 
+export interface EjectorExtractData {
+  roofPanelMeshes: THREE.Mesh[];
+  roofPanelCenter: THREE.Vector3;
+  passengerSeatMeshes: THREE.Mesh[];
+  passengerSeatCenter: THREE.Vector3;
+  roofSurfaceY: (x: number, z: number) => number;
+}
+
 interface CaltropItem {
   active: boolean;
   settled: boolean;
@@ -64,7 +72,12 @@ export interface QBranchGadgetsRig {
   frontRams: THREE.Group[];
   rearRams: THREE.Group[];
   bulletShieldGroup: THREE.Group;
-  roofHatchPivot: THREE.Group;
+  roofHatchGroup: THREE.Group;
+  roofHatchBasePos: THREE.Vector3;
+  passengerSeatGroup: THREE.Group;
+  passengerSeatBasePos: THREE.Vector3;
+  ejectAirPoints: THREE.Points;
+  ejectAirParticles: SmokeParticle[];
   leftOilLampPivot: THREE.Group;
   leftOilNozzle: THREE.Mesh;
   leftOilArms: THREE.Mesh[];
@@ -74,7 +87,10 @@ export interface QBranchGadgetsRig {
   ramFrontExtend: number;
   ramRearExtend: number;
   shieldExtend: number;
+  hatchActivePrev: boolean;
+  hatchTimer: number;
   hatchOpen: number;
+  seatEjectProgress: number;
   oilLidOpen: number;
   caltropLidOpen: number;
   smokePoints: THREE.Points;
@@ -184,53 +200,6 @@ function createPlateTexture(variant: 0 | 1 | 2): THREE.CanvasTexture {
   return tex;
 }
 
-/** Generates a Q-Branch hazard stencil texture for the underside of the ejector roof hatch. */
-function createRoofHatchUndersideTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 512;
-  const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = '#181a20';
-  ctx.fillRect(0, 0, 512, 512);
-
-  // Diagonal hazard stripes along edges
-  ctx.fillStyle = '#eab308';
-  for (let i = -512; i < 1024; i += 48) {
-    ctx.beginPath();
-    ctx.moveTo(i, 0);
-    ctx.lineTo(i + 24, 0);
-    ctx.lineTo(i - 16, 40);
-    ctx.lineTo(i - 40, 40);
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(i, 472);
-    ctx.lineTo(i + 24, 472);
-    ctx.lineTo(i - 16, 512);
-    ctx.lineTo(i - 40, 512);
-    ctx.fill();
-  }
-
-  ctx.strokeStyle = '#ef4444';
-  ctx.lineWidth = 6;
-  ctx.strokeRect(32, 62, 448, 388);
-
-  ctx.fillStyle = '#f8fafc';
-  ctx.font = 'bold 34px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('Q-BRANCH MK.IV', 256, 200);
-  ctx.fillStyle = '#ef4444';
-  ctx.font = 'bold 42px sans-serif';
-  ctx.fillText('DANGER: EJECTOR HATCH', 256, 265);
-  ctx.fillStyle = '#94a3b8';
-  ctx.font = 'bold 24px monospace';
-  ctx.fillText('PYROTECHNIC RELEASE LOCK', 256, 325);
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
 /**
  * Builds all exterior Q-Branch gadgets wired to the center armrest switchgear:
  * 1. Front & Rear Revolving 3-Way Number Plates (BMT 216A / 4711-EA-62 / LU 6789)
@@ -273,7 +242,8 @@ function buildTetraCaltropGeometry(radius = 0.022): THREE.BufferGeometry {
 
 export function createQBranchGadgetsRig(
   trunkShieldProfile?: Array<{ x: number; y: number }>,
-  tailLightSplits?: TailLightSplitData
+  tailLightSplits?: TailLightSplitData,
+  ejectorExtract?: EjectorExtractData
 ): QBranchGadgetsRig {
   const root = new THREE.Group();
   root.name = 'QBranch_ExteriorGadgets';
@@ -642,33 +612,242 @@ export function createQBranchGadgetsRig(
   bulletShieldGroup.add(shieldCap);
 
   // =========================================================================
-  // 4. PASSENGER EJECTOR SEAT ROOF HATCH (RHD: Passenger = +X)
+  // 4. PASSENGER EJECTOR SEAT & JETTISONABLE ROOF PANEL (RHD: Passenger = +X)
   // =========================================================================
-  const roofHatchPivot = new THREE.Group();
-  // Hinge along outer passenger edge (x = +0.50) so it swings open cleanly
-  roofHatchPivot.position.set(0.49, 1.325, -0.15);
-  root.add(roofHatchPivot);
+  // Full passenger-side roof opening (wider & longer than the bucket seat for zero metal clash)
+  const HATCH_MIN_X = 0.005;
+  const HATCH_MAX_X = 0.565;
+  const HATCH_MIN_Z = -0.520;
+  const HATCH_MAX_Z = 0.095;
+  const HATCH_CX = (HATCH_MIN_X + HATCH_MAX_X) * 0.5;
+  const HATCH_CZ = (HATCH_MIN_Z + HATCH_MAX_Z) * 0.5;
+  const HATCH_HW = (HATCH_MAX_X - HATCH_MIN_X) * 0.5;
+  const HATCH_HZ = (HATCH_MAX_Z - HATCH_MIN_Z) * 0.5;
 
-  const hatchOuter = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.014, 0.56), silverBirchMat);
-  register(
-    hatchOuter,
-    'Ejector Seat Roof Hatch',
-    'Silver Birch Aluminum Panel',
-    'Explosive-bolt passenger roof panel linked to the Q-Branch Roof Hatch arming switch.',
-    [0.55, 1.35, 0]
+  const sampleRoofY = (x: number, z: number): number => {
+    if (ejectorExtract?.roofSurfaceY) {
+      return ejectorExtract.roofSurfaceY(x, z);
+    }
+    return 1.380 - 0.14 * x * x - 0.08 * (z + 0.18) * (z + 0.18);
+  };
+
+  // Build rounded rectangular perimeter ring following the exact 3D roof crown sampleRoofY(x, z)
+  const buildRoofOpeningRingGeo = (
+    outerMargin: number,
+    innerMargin: number,
+    topOffset: number,
+    botOffset: number,
+    cornerRadius = 0.042,
+    segs = 64
+  ): THREE.BufferGeometry => {
+    const getRoundedRectPt = (u: number, hw: number, hz: number, r: number): [number, number] => {
+      const a = u * Math.PI * 2;
+      const ca = Math.cos(a);
+      const sa = Math.sin(a);
+      // Superellipse exponent n=5 produces crisp automotive rounded-rectangle corners matching the photo
+      const exp = 0.22;
+      const sx = Math.sign(ca) * Math.pow(Math.abs(ca), exp);
+      const sz = Math.sign(sa) * Math.pow(Math.abs(sa), exp);
+      return [
+        HATCH_CX + sx * (hw - r * 0.15),
+        HATCH_CZ + sz * (hz - r * 0.15),
+      ];
+    };
+
+    const positions: number[] = [];
+    const indices: number[] = [];
+    for (let i = 0; i <= segs; i++) {
+      const u = i / segs;
+      const [ox, oz] = getRoundedRectPt(u, HATCH_HW + outerMargin, HATCH_HZ + outerMargin, cornerRadius);
+      const [ix, iz] = getRoundedRectPt(u, HATCH_HW + innerMargin, HATCH_HZ + innerMargin, cornerRadius);
+      const oy = sampleRoofY(ox, oz);
+      const iy = sampleRoofY(ix, iz);
+      // 4 vertices per cross-section: 0=outerBot, 1=outerTop, 2=innerTop, 3=innerBot
+      positions.push(
+        ox, oy + botOffset, oz,
+        ox, oy + topOffset, oz,
+        ix, iy + topOffset, iz,
+        ix, iy + botOffset, iz
+      );
+    }
+    for (let i = 0; i < segs; i++) {
+      const a = i * 4;
+      const b = (i + 1) * 4;
+      indices.push(a + 0, b + 0, b + 1, a + 0, b + 1, a + 1);
+      indices.push(a + 1, b + 1, b + 2, a + 1, b + 2, a + 2);
+      indices.push(a + 2, b + 2, b + 3, a + 2, b + 3, a + 3);
+      indices.push(a + 3, b + 3, b + 0, a + 3, b + 0, a + 0);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    return geo;
+  };
+
+  // Recessed perimeter weatherstrip & channel lip (tucked below outer Silver Birch skin so closed roof is 100% flush & seamless)
+  const roofSealGeo = buildRoofOpeningRingGeo(0.006, -0.010, -0.0025, -0.022, 0.044, 72);
+  const roofSealMesh = register(
+    new THREE.Mesh(roofSealGeo, rubberPadMat),
+    'Ejector Roof Opening Weatherstrip',
+    'Recessed Neoprene Perimeter Seal',
+    'Recessed perimeter seal lining the passenger roof cutout, revealed only once the roof panel jettisons.',
+    [0.25, 1.15, -0.15]
   );
-  hatchOuter.position.set(-0.225, 0.012, 0);
-  roofHatchPivot.add(hatchOuter);
+  root.add(roofSealMesh);
 
-  const hatchUnderMat = new THREE.MeshStandardMaterial({
-    map: createRoofHatchUndersideTexture(),
-    roughness: 0.45,
-    metalness: 0.2,
+  const innerFlangeGeo = buildRoofOpeningRingGeo(-0.006, -0.016, -0.004, -0.024, 0.042, 64);
+  const innerFlangeMesh = new THREE.Mesh(innerFlangeGeo, gunmetalMat);
+  root.add(innerFlangeMesh);
+
+  // Jettisonable Roof Panel Group (extracted live from SM_Roof_101 + headliner so it sits 100% flush & seamless when closed)
+  const roofHatchBasePos = ejectorExtract?.roofPanelCenter
+    ? ejectorExtract.roofPanelCenter.clone()
+    : new THREE.Vector3(HATCH_CX, sampleRoofY(HATCH_CX, HATCH_CZ), HATCH_CZ);
+  const roofHatchGroup = new THREE.Group();
+  roofHatchGroup.position.copy(roofHatchBasePos);
+  root.add(roofHatchGroup);
+
+  if (ejectorExtract && ejectorExtract.roofPanelMeshes.length > 0) {
+    for (const rm of ejectorExtract.roofPanelMeshes) {
+      register(
+        rm,
+        'Jettisonable Passenger Roof Panel',
+        'Silver Birch Aluminum Roof Section',
+        'Flush passenger-side roof panel sheared cleanly by pneumatic bolts prior to compressed-air seat ejection.',
+        [0.45, 1.45, -0.15]
+      );
+      roofHatchGroup.add(rm);
+    }
+  } else {
+    const fallbackHatch = register(
+      new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.014, 0.61), silverBirchMat),
+      'Jettisonable Passenger Roof Panel',
+      'Silver Birch Aluminum Roof Section',
+      'Flush passenger-side roof panel sheared cleanly by pneumatic bolts prior to compressed-air seat ejection.',
+      [0.45, 1.45, -0.15]
+    );
+    roofHatchGroup.add(fallbackHatch);
+  }
+
+  // Passenger Ejector Seat Group (minimal bucket seat + compact tucked-in compressed-air base)
+  const passengerSeatBasePos = ejectorExtract?.passengerSeatCenter
+    ? ejectorExtract.passengerSeatCenter.clone()
+    : new THREE.Vector3(0.32, 0.56, -0.14);
+  const passengerSeatGroup = new THREE.Group();
+  passengerSeatGroup.position.copy(passengerSeatBasePos);
+  root.add(passengerSeatGroup);
+
+  if (ejectorExtract && ejectorExtract.passengerSeatMeshes.length > 0) {
+    for (const sm of ejectorExtract.passengerSeatMeshes) {
+      register(
+        sm,
+        'Q-Branch Passenger Ejector Seat',
+        'Connolly Leather Bucket Seat',
+        'Minimal-clearance passenger bucket seat propelled vertically by twin compressed-air cylinders.',
+        [0.35, 1.25, -0.15]
+      );
+      passengerSeatGroup.add(sm);
+    }
+  }
+
+  // Compact twin compressed-air launch pistons tucked cleanly beneath the seat cushion
+  for (const rx of [-0.095, 0.095]) {
+    const airPiston = register(
+      new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.016, 0.16, 14), chromeMat),
+      'Compressed-Air Ejector Piston',
+      'High-Pressure Pneumatic Rod',
+      'Telescoping compressed-air piston rod driving jet-cockpit style vertical ejection.',
+      [0.35, 0.85, -0.14]
+    );
+    airPiston.position.set(rx, -0.14, -0.02);
+    passengerSeatGroup.add(airPiston);
+  }
+
+  // Fixed floor-mounted compressed-air receiver cylinders anchored beneath the seat
+  for (const rx of [-0.095, 0.095]) {
+    const floorTube = register(
+      new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.024, 0.16, 14), gunmetalMat),
+      'Compressed-Air Floor Cylinder',
+      'High-Pressure Pneumatic Reservoir',
+      'Twin compressed-air cylinders bolted to the cabin floor pan beneath the passenger seat.',
+      [0.35, 0.45, -0.14]
+    );
+    floorTube.position.set(passengerSeatBasePos.x + rx, 0.34, passengerSeatBasePos.z - 0.02);
+    root.add(floorTube);
+  }
+
+  // Compressed-Air Vapour Burst Particle System (white-blue pneumatic blast on ejection)
+  const EJECT_AIR_COUNT = 72;
+  const ejectAirPos = new Float32Array(EJECT_AIR_COUNT * 3);
+  const ejectAirAge = new Float32Array(EJECT_AIR_COUNT);
+  const ejectAirSize = new Float32Array(EJECT_AIR_COUNT);
+  const ejectAirSeed = new Float32Array(EJECT_AIR_COUNT);
+  const ejectAirRot = new Float32Array(EJECT_AIR_COUNT);
+  const ejectAirParticles: SmokeParticle[] = [];
+  for (let i = 0; i < EJECT_AIR_COUNT; i++) {
+    ejectAirParticles.push({
+      active: false,
+      age: 0,
+      life: 0.55,
+      pos: new THREE.Vector3(0, -10, 0),
+      vel: new THREE.Vector3(),
+      baseSize: 0.35,
+      seed: Math.random() * 100,
+      rot: Math.random() * Math.PI * 2,
+    });
+    ejectAirPos[i * 3 + 1] = -10;
+  }
+  const ejectAirGeo = new THREE.BufferGeometry();
+  ejectAirGeo.setAttribute('position', new THREE.BufferAttribute(ejectAirPos, 3));
+  ejectAirGeo.setAttribute('aAge', new THREE.BufferAttribute(ejectAirAge, 1));
+  ejectAirGeo.setAttribute('aSize', new THREE.BufferAttribute(ejectAirSize, 1));
+  ejectAirGeo.setAttribute('aSeed', new THREE.BufferAttribute(ejectAirSeed, 1));
+  ejectAirGeo.setAttribute('aRot', new THREE.BufferAttribute(ejectAirRot, 1));
+
+  const ejectAirMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: {
+      uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
+    },
+    vertexShader: `
+      attribute float aAge;
+      attribute float aSize;
+      attribute float aRot;
+      varying float vAge;
+      varying float vRot;
+      uniform float uPixelRatio;
+      void main() {
+        vAge = aAge;
+        vRot = aRot;
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+        float grow = mix(0.25, 1.65, clamp(aAge, 0.0, 1.0));
+        gl_PointSize = aSize * grow * uPixelRatio * (380.0 / max(0.4, -mvPosition.z));
+      }
+    `,
+    fragmentShader: `
+      varying float vAge;
+      varying float vRot;
+      void main() {
+        vec2 uv = gl_PointCoord - 0.5;
+        float dist = length(uv) * 2.0;
+        if (dist > 1.0) discard;
+        float soft = pow(1.0 - dist, 1.8);
+        float fadeIn = smoothstep(0.0, 0.08, vAge);
+        float fadeOut = 1.0 - smoothstep(0.25, 1.0, vAge);
+        float alpha = soft * fadeIn * fadeOut * 0.72;
+        if (alpha < 0.01) discard;
+        vec3 col = mix(vec3(0.78, 0.90, 1.0), vec3(0.96, 0.99, 1.0), soft);
+        gl_FragColor = vec4(col, alpha);
+      }
+    `,
   });
-  const hatchInner = new THREE.Mesh(new THREE.PlaneGeometry(0.41, 0.52), hatchUnderMat);
-  hatchInner.rotation.x = Math.PI / 2;
-  hatchInner.position.set(-0.225, 0.004, 0);
-  roofHatchPivot.add(hatchInner);
+  const ejectAirPoints = new THREE.Points(ejectAirGeo, ejectAirMat);
+  ejectAirPoints.frustumCulled = false;
+  ejectAirPoints.renderOrder = 45;
+  root.add(ejectAirPoints);
 
   // =========================================================================
   // 5. REAR SMOKE, LEFT-TAILLIGHT OIL PUMP, & RIGHT-TAILLIGHT CALTROP DISPENSER
@@ -1299,7 +1478,12 @@ export function createQBranchGadgetsRig(
       frontRams,
       rearRams,
       bulletShieldGroup,
-      roofHatchPivot,
+      roofHatchGroup,
+      roofHatchBasePos,
+      passengerSeatGroup,
+      passengerSeatBasePos,
+      ejectAirPoints,
+      ejectAirParticles,
       leftOilLampPivot,
       leftOilNozzle,
       leftOilArms,
@@ -1309,7 +1493,10 @@ export function createQBranchGadgetsRig(
       ramFrontExtend: 0,
       ramRearExtend: 0,
       shieldExtend: 0,
+      hatchActivePrev: false,
+      hatchTimer: 0,
       hatchOpen: 0,
+      seatEjectProgress: 0,
       oilLidOpen: 0,
       caltropLidOpen: 0,
       smokePoints,
@@ -1362,10 +1549,112 @@ export function createQBranchGadgetsRig(
     rig.shieldExtend += ((state.bulletShield ? 1 : 0) - rig.shieldExtend) * Math.min(1, safeDt * 5.5);
     rig.bulletShieldGroup.position.y = -0.326 + rig.shieldExtend * 0.326;
 
-    // 4. Passenger Ejector Seat Roof Hatch
-    rig.hatchOpen += ((state.roofHatch ? 1 : 0) - rig.hatchOpen) * Math.min(1, safeDt * 6.5);
-    rig.roofHatchPivot.rotation.z = -rig.hatchOpen * 1.15;
-    rig.roofHatchPivot.position.y = 1.325 + rig.hatchOpen * 0.035;
+    // 4. Passenger Ejector Seat & Jettisonable Roof Panel Sequence (Jet-Cockpit Compressed-Air Principle)
+    // Stage 1 (0.00s -> 0.32s): Pneumatic bolts shear & blast the flush roof panel cleanly up and rearward out of the slipstream
+    // Stage 2 (0.14s -> 0.54s): High-pressure compressed-air cylinders fire a white-blue vapour burst & rocket the seat skyward
+    if (state.roofHatch && !rig.hatchActivePrev) {
+      rig.hatchTimer = 0;
+    }
+    rig.hatchActivePrev = state.roofHatch;
+
+    if (state.roofHatch) {
+      rig.hatchTimer = Math.min(3.0, rig.hatchTimer + safeDt);
+      const tPanel = THREE.MathUtils.clamp(rig.hatchTimer / 0.36, 0, 1);
+      rig.hatchOpen = tPanel;
+      const arcY = 2.65 * tPanel - 0.55 * tPanel * tPanel;
+      const driftZ = -2.45 * tPanel * tPanel;
+      const driftX = 0.28 * tPanel;
+      rig.roofHatchGroup.position.set(
+        rig.roofHatchBasePos.x + driftX,
+        rig.roofHatchBasePos.y + arcY,
+        rig.roofHatchBasePos.z + driftZ
+      );
+      rig.roofHatchGroup.rotation.set(-tPanel * 2.2, tPanel * 0.35, -tPanel * 0.65);
+      rig.roofHatchGroup.visible = tPanel < 0.98;
+
+      // Rapid compressed-air ballistic launch along seat-back angle (+Y, slightly -Z, zero lateral clash)
+      const tSeatRaw = THREE.MathUtils.clamp((rig.hatchTimer - 0.14) / 0.38, 0, 1);
+      const seatEase = 1 - Math.pow(1 - tSeatRaw, 3.2);
+      rig.seatEjectProgress = seatEase;
+      rig.passengerSeatGroup.position.set(
+        rig.passengerSeatBasePos.x,
+        rig.passengerSeatBasePos.y + 1.18 * seatEase,
+        rig.passengerSeatBasePos.z - 0.22 * seatEase
+      );
+      rig.passengerSeatGroup.rotation.set(-0.16 * seatEase, 0, 0);
+    } else {
+      // Smoothly re-seat compressed-air seat and reseat flush roof panel when reset
+      rig.hatchTimer = 0;
+      rig.hatchOpen += (0 - rig.hatchOpen) * Math.min(1, safeDt * 8.0);
+      rig.seatEjectProgress += (0 - rig.seatEjectProgress) * Math.min(1, safeDt * 8.0);
+      rig.roofHatchGroup.visible = true;
+      rig.roofHatchGroup.position.set(
+        rig.roofHatchBasePos.x + 0.28 * rig.hatchOpen,
+        rig.roofHatchBasePos.y + 1.85 * rig.hatchOpen,
+        rig.roofHatchBasePos.z - 1.65 * rig.hatchOpen
+      );
+      rig.roofHatchGroup.rotation.set(-rig.hatchOpen * 1.4, rig.hatchOpen * 0.25, -rig.hatchOpen * 0.45);
+      rig.passengerSeatGroup.position.set(
+        rig.passengerSeatBasePos.x,
+        rig.passengerSeatBasePos.y + 1.18 * rig.seatEjectProgress,
+        rig.passengerSeatBasePos.z - 0.22 * rig.seatEjectProgress
+      );
+      rig.passengerSeatGroup.rotation.set(-0.16 * rig.seatEjectProgress, 0, 0);
+    }
+
+    // 4B. Compressed-Air Vapour Burst from Floor Cylinders during Ejection Launch
+    const airPosAttr = rig.ejectAirPoints.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const airAgeAttr = rig.ejectAirPoints.geometry.getAttribute('aAge') as THREE.BufferAttribute;
+    const airSizeAttr = rig.ejectAirPoints.geometry.getAttribute('aSize') as THREE.BufferAttribute;
+    const airRotAttr = rig.ejectAirPoints.geometry.getAttribute('aRot') as THREE.BufferAttribute;
+
+    const isAirBlasting = state.roofHatch && rig.hatchTimer >= 0.12 && rig.hatchTimer <= 0.65;
+    let airBudget = isAirBlasting ? 10 : 0;
+    for (let i = 0; i < rig.ejectAirParticles.length; i++) {
+      const ap = rig.ejectAirParticles[i];
+      if (!ap.active && airBudget > 0) {
+        airBudget--;
+        ap.active = true;
+        ap.age = 0;
+        ap.life = 0.42 + Math.random() * 0.22;
+        const rx = i % 2 === 0 ? -0.095 : 0.095;
+        ap.pos.set(
+          rig.passengerSeatBasePos.x + rx + (Math.random() - 0.5) * 0.04,
+          0.42,
+          rig.passengerSeatBasePos.z - 0.02 + (Math.random() - 0.5) * 0.04
+        );
+        ap.vel.set(
+          (Math.random() - 0.5) * 0.75 + (rx > 0 ? 0.25 : -0.25),
+          2.2 + Math.random() * 1.6,
+          -0.35 + (Math.random() - 0.5) * 0.45
+        );
+        ap.baseSize = 0.28 + Math.random() * 0.22;
+        ap.rot = Math.random() * Math.PI * 2;
+      }
+
+      if (ap.active) {
+        ap.age += safeDt;
+        const t = ap.age / ap.life;
+        if (t >= 1) {
+          ap.active = false;
+          airPosAttr.setXYZ(i, 0, -10, 0);
+          airAgeAttr.setX(i, 1);
+        } else {
+          ap.vel.multiplyScalar(Math.pow(0.18, safeDt));
+          ap.pos.addScaledVector(ap.vel, safeDt);
+          airPosAttr.setXYZ(i, ap.pos.x, ap.pos.y, ap.pos.z);
+          airAgeAttr.setX(i, t);
+          airSizeAttr.setX(i, ap.baseSize);
+          airRotAttr.setX(i, ap.rot);
+        }
+      } else {
+        airPosAttr.setXYZ(i, 0, -10, 0);
+      }
+    }
+    airPosAttr.needsUpdate = true;
+    airAgeAttr.needsUpdate = true;
+    airSizeAttr.needsUpdate = true;
+    airRotAttr.needsUpdate = true;
 
     // 5A. Volumetric Smoke Screen Particle Simulation
     const posAttr = rig.smokePoints.geometry.getAttribute('position') as THREE.BufferAttribute;

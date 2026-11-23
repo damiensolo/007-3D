@@ -137,11 +137,10 @@ export function App() {
       }
       buttonTimerRef.current = window.setTimeout(() => {
         setQBranchState((curr) => ({ ...curr, gearButtonPressed: false }));
-      }, 220);
+      }, 260);
 
-      setGunDeploy(1);
-      setIsFiringGuns((firing) => !firing);
-      return { ...prev, gearButtonPressed: true, wingGuns: true };
+      const nextEject = !prev.roofHatch;
+      return { ...prev, gearButtonPressed: true, roofHatch: nextEject };
     });
   }, []);
 
@@ -796,13 +795,13 @@ export function App() {
 
             <button
               onClick={triggerGearRedButton}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition cursor-pointer ${isFiringGuns
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition cursor-pointer ${qBranchState.roofHatch
                   ? 'bg-red-600 text-white border-red-400 shadow-sm shadow-red-500/40'
                   : 'bg-red-950/60 text-red-300 border-red-500/40 hover:bg-red-900/60'
                 }`}
-              title="Press red gear-knob actuator button to deploy & fire machine guns"
+              title="Press red gear-knob ejector button to jettison roof section and launch passenger seat"
             >
-              {qBranchState.gearCapOpen ? 'Red Trigger' : 'Arm Trigger'}
+              {qBranchState.roofHatch ? 'Reset Ejector' : qBranchState.gearCapOpen ? 'Eject Seat' : 'Arm Ejector'}
             </button>
 
             <button
@@ -829,7 +828,7 @@ export function App() {
             {(
               [
                 ['wingGuns', 'Guns'],
-                ['roofHatch', 'Hatch'],
+                ['roofHatch', 'Eject'],
                 ['bulletShield', 'Shield'],
                 ['smokeScreen', 'Smoke'],
                 ['oilSlick', 'Oil'],
