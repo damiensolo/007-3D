@@ -25,6 +25,7 @@ interface OilDroplet {
   age: number;
   life: number;
   radius: number;
+  elongation: number;
   pos: THREE.Vector3;
   vel: THREE.Vector3;
 }
@@ -496,7 +497,7 @@ export function createQBranchGadgetsRig(
   // 3. BULLET-RESISTANT REAR ARMOR SHIELD (Raycast-Fitted Trunk Slot + Planar Plate)
   // =========================================================================
   const SHIELD_Z = -1.71;
-  const SHIELD_HALF_W = 0.348;
+  const SHIELD_HALF_W = 0.432;
 
   // Interpolate exact raycasted SK_Trunk_101 surface Y(x) so slot & cap never sink or gap
   const sampleTrunkY = (x: number): number => {
@@ -959,26 +960,27 @@ export function createQBranchGadgetsRig(
     smokePoints.renderOrder = 50; // Always render after transparent car glass, lights, dashboard, and badges
     root.add(smokePoints);
 
-    // --- B. Nozzle-Anchored Viscous Filament, Deformed Droplets & Organic FBM Metaball Puddle ---
-    const OIL_COUNT = 44;
+    // --- B. Cohesive High-Viscosity Oil Stream, Connected Liquid Packets & Metaball Puddle ---
+    const OIL_COUNT = 180;
     const oilDroplets: OilDroplet[] = [];
     const oilSeeds = new Float32Array(OIL_COUNT);
     for (let i = 0; i < OIL_COUNT; i++) {
       oilDroplets.push({
         active: false,
         age: 0,
-        life: 1.25,
-        radius: 0.007,
+        life: 1.35,
+        radius: 0.0085,
+        elongation: 5.5,
         pos: new THREE.Vector3(0, -10, 0),
         vel: new THREE.Vector3(),
       });
-      oilSeeds[i] = Math.random() * 62.8;
+      oilSeeds[i] = (i * 0.42) % 62.8;
     }
 
     const blobGeo = new THREE.SphereGeometry(1.0, 18, 14);
     blobGeo.setAttribute('aSeed', new THREE.InstancedBufferAttribute(oilSeeds, 1));
 
-    // Shared Beer-Lambert + IOR 1.47 dielectric shader with organic 3D surface wobble (no rigid balls/spines)
+    // Shared Beer-Lambert + IOR 1.47 dielectric shader with smooth cohesive capsule deformation
     const oilBlobMat = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: true,
@@ -989,19 +991,21 @@ export function createQBranchGadgetsRig(
         attribute float aSeed;
         varying vec3 vNormal;
         varying vec3 vViewDir;
+        varying float vRadial;
         uniform float uTime;
         void main() {
-          // Organic liquid droplet wobble + teardrop taper along local Z
+          // Smooth high-viscosity liquid packet modulation along flow axis
           vec3 p = position;
-          float wobble = 1.0
-            + 0.18 * sin(p.z * 3.8 + aSeed + uTime * 9.5)
-            + 0.14 * cos(p.x * 4.2 - aSeed * 1.3 + uTime * 7.2)
-            + 0.11 * sin(p.y * 4.5 + aSeed * 0.7);
-          p.xy *= wobble * (1.0 - 0.22 * smoothstep(-0.2, 1.0, -p.z));
+          float wave = 1.0
+            + 0.14 * sin(p.z * 2.6 + aSeed - uTime * 6.5)
+            + 0.08 * cos(p.y * 3.0 + aSeed * 0.7 + uTime * 4.8);
+          float taper = 1.0 - 0.14 * p.z * p.z;
+          p.xy *= wave * taper;
+          vRadial = length(p.xy);
 
           mat4 m = modelMatrix * instanceMatrix;
           vec4 wp = m * vec4(p, 1.0);
-          vNormal = normalize(mat3(m) * normalize(normal + vec3(0.15 * sin(p.z * 4.0 + aSeed), 0.12 * cos(p.x * 4.0), 0.0)));
+          vNormal = normalize(mat3(m) * normalize(normal + vec3(0.08 * sin(p.z * 2.6 + aSeed), 0.08 * cos(p.z * 2.6), 0.0)));
           vViewDir = normalize(cameraPosition - wp.xyz);
           gl_Position = projectionMatrix * viewMatrix * wp;
         }
@@ -1009,28 +1013,30 @@ export function createQBranchGadgetsRig(
       fragmentShader: `
         varying vec3 vNormal;
         varying vec3 vViewDir;
+        varying float vRadial;
         void main() {
           vec3 N = normalize(vNormal);
           vec3 V = normalize(vViewDir);
           float ndotv = clamp(dot(N, V), 0.0, 1.0);
 
-          // Beer-Lambert depth absorption: thin edges glow amber/golden-brown, thick centers -> near-black
-          float opticalDepth = mix(0.20, 2.3, pow(ndotv, 0.85));
-          vec3 absorption = exp(-vec3(2.4, 5.2, 11.5) * opticalDepth);
-          vec3 amberGlow = vec3(0.78, 0.38, 0.07) * absorption;
-          vec3 coreOil = mix(vec3(0.020, 0.012, 0.007), amberGlow, 0.85);
+          // Beer-Lambert depth absorption: thin edges glow rich amber/golden-brown, thick core -> deep black-brown
+          float opticalDepth = mix(0.22, 2.35, pow(ndotv, 0.80));
+          vec3 absorption = exp(-vec3(2.2, 5.0, 11.2) * opticalDepth);
+          vec3 amberGlow = vec3(0.76, 0.36, 0.06) * absorption;
+          vec3 coreOil = mix(vec3(0.015, 0.009, 0.004), amberGlow, 0.86);
 
-          // Dielectric Fresnel (IOR ~1.47 -> F0 = 0.0362) & soft studio specular (no sharp white spine)
+          // Warm amber-tinted studio reflection (no blown-out white hot-spots or harsh white Fresnel rings)
           float F0 = 0.0362;
-          float fresnel = F0 + (1.0 - F0) * pow(1.0 - ndotv, 5.0);
+          float fresnel = F0 + (0.28 - F0) * pow(1.0 - ndotv, 4.0);
           vec3 L1 = normalize(vec3(0.35, 0.90, 0.25));
-          float spec1 = pow(max(dot(N, normalize(L1 + V)), 0.0), 64.0);
-          vec3 L2 = normalize(vec3(-0.4, 0.7, -0.5));
-          float spec2 = pow(max(dot(N, normalize(L2 + V)), 0.0), 36.0);
+          float spec1 = pow(max(dot(N, normalize(L1 + V)), 0.0), 28.0);
+          vec3 L2 = normalize(vec3(-0.4, 0.75, -0.45));
+          float spec2 = pow(max(dot(N, normalize(L2 + V)), 0.0), 16.0);
 
-          vec3 envRefl = vec3(0.88, 0.92, 0.98) * fresnel;
-          vec3 col = coreOil + envRefl + vec3(1.0) * (spec1 * 0.72 + spec2 * 0.35);
-          float alpha = mix(0.84, 1.0, smoothstep(0.12, 0.55, ndotv));
+          vec3 warmSheen = vec3(0.42, 0.24, 0.08) * fresnel;
+          vec3 warmHighlight = vec3(0.62, 0.38, 0.14) * (spec1 * 0.22 + spec2 * 0.12);
+          vec3 col = clamp(coreOil + warmSheen + warmHighlight, 0.0, 0.72);
+          float alpha = mix(0.90, 0.99, smoothstep(0.08, 0.45, ndotv));
           gl_FragColor = vec4(col, alpha);
         }
       `,
@@ -1041,21 +1047,24 @@ export function createQBranchGadgetsRig(
     oilBlobInstanced.renderOrder = 2;
     root.add(oilBlobInstanced);
 
-    // Nozzle-anchored clinging viscous filament (starts inside hollow pipe bore -> stretches & necks organically)
+    // Nozzle-anchored continuous ballistic viscous oil stream (matches gravity parabolic trajectory)
     const filCurvePts: THREE.Vector3[] = [];
-    for (let i = 0; i <= 14; i++) {
-      const t = i / 14;
-      filCurvePts.push(new THREE.Vector3(0, -0.025 * t * t, -t * 0.24));
+    for (let i = 0; i <= 24; i++) {
+      const u = i / 24;
+      const distZ = u * 0.72; // Extends 0.72m along the ballistic arc before pinching into long ribbons
+      const flightT = distZ / 1.38;
+      const dropY = 0.04 * flightT - 0.5 * 3.8 * flightT * flightT;
+      filCurvePts.push(new THREE.Vector3(0, dropY, -distZ));
     }
     const filCurve = new THREE.CatmullRomCurve3(filCurvePts);
-    const filGeo = new THREE.TubeGeometry(filCurve, 22, 1.0, 12, false);
+    const filGeo = new THREE.TubeGeometry(filCurve, 44, 1.0, 16, false);
     const filPos = filGeo.attributes.position;
     const filUv = filGeo.attributes.uv;
     const filPt = new THREE.Vector3();
     for (let i = 0; i < filPos.count; i++) {
       const u = filUv.getX(i);
       const c = filCurve.getPointAt(THREE.MathUtils.clamp(u, 0, 1));
-      const r = THREE.MathUtils.lerp(0.0050, 0.0018, Math.pow(u, 0.7));
+      const r = THREE.MathUtils.lerp(0.0062, 0.0040, Math.pow(u, 0.65));
       filPt.fromBufferAttribute(filPos, i).sub(c).multiplyScalar(r).add(c);
       filPos.setXYZ(i, filPt.x, filPt.y, filPt.z);
     }
@@ -1079,16 +1088,18 @@ export function createQBranchGadgetsRig(
           vUv = uv;
           float u = uv.x;
           vec3 p = position;
-          p.z *= uLength;
-          // Rayleigh-Plateau necking/bulging waves along the stretching viscous ligament
-          float env = smoothstep(0.05, 0.35, u);
-          float pinch = 1.0 + 0.38 * sin(u * 14.0 - uTime * 11.0);
-          p.xy += normal.xy * ((pinch - 1.0) * 0.0028 * env);
-          p.x += sin(u * 9.0 - uTime * 6.5) * 0.004 * env;
-          p.y += cos(u * 7.0 - uTime * 5.8) * 0.003 * env;
+          // High-viscosity Rayleigh-Plateau traveling surface tension waves & organic sway
+          float env = smoothstep(0.03, 0.25, u);
+          float wave1 = sin(u * 15.0 - uTime * 11.5);
+          float wave2 = cos(u * 26.0 - uTime * 17.0);
+          float radiusMod = 1.0 + (0.28 * wave1 + 0.14 * wave2) * env;
+          p.xy += normal.xy * ((radiusMod - 1.0) * 0.0034);
+          p.x += sin(u * 6.5 - uTime * 5.2) * 0.0065 * u * env;
+          p.y += cos(u * 8.0 - uTime * 6.0) * 0.0045 * u * env;
 
           vec4 wp = modelMatrix * vec4(p, 1.0);
-          vNormal = normalize(mat3(modelMatrix) * normal);
+          vec3 pertN = normalize(normal + vec3(0.18 * wave1 * env, 0.14 * wave2 * env, 0.0));
+          vNormal = normalize(mat3(modelMatrix) * pertN);
           vViewDir = normalize(cameraPosition - wp.xyz);
           gl_Position = projectionMatrix * viewMatrix * wp;
         }
@@ -1098,22 +1109,26 @@ export function createQBranchGadgetsRig(
         varying vec3 vNormal;
         varying vec3 vViewDir;
         uniform float uActive;
+        uniform float uLength;
         void main() {
-          if (uActive <= 0.01) discard;
+          if (uActive <= 0.01 || vUv.x > uLength) discard;
           vec3 N = normalize(vNormal);
           vec3 V = normalize(vViewDir);
           float ndotv = clamp(dot(N, V), 0.0, 1.0);
-          // Thin stretched ligament glows warm golden-amber via Beer-Lambert absorption
-          float opticalDepth = mix(0.18, 1.35, pow(ndotv, 0.9)) * mix(1.0, 0.35, vUv.x);
-          vec3 absorption = exp(-vec3(2.4, 5.2, 11.5) * opticalDepth);
-          vec3 col = mix(vec3(0.025, 0.014, 0.008), vec3(0.82, 0.42, 0.08) * absorption, 0.9);
+          // Rich high-viscosity motor oil glow via Beer-Lambert absorption (warm amber sheen, no white blowouts)
+          float opticalDepth = mix(0.22, 2.15, pow(ndotv, 0.82)) * mix(1.05, 0.65, vUv.x);
+          vec3 absorption = exp(-vec3(2.2, 5.0, 11.2) * opticalDepth);
+          vec3 col = mix(vec3(0.015, 0.009, 0.004), vec3(0.76, 0.36, 0.06) * absorption, 0.86);
           float F0 = 0.0362;
-          float fresnel = F0 + (1.0 - F0) * pow(1.0 - ndotv, 5.0);
+          float fresnel = F0 + (0.28 - F0) * pow(1.0 - ndotv, 4.0);
           vec3 L1 = normalize(vec3(0.35, 0.90, 0.25));
-          float spec = pow(max(dot(N, normalize(L1 + V)), 0.0), 48.0);
-          col += vec3(0.88, 0.92, 0.98) * fresnel + vec3(1.0) * spec * 0.55;
-          float tipFade = 1.0 - smoothstep(0.75, 1.0, vUv.x);
-          gl_FragColor = vec4(col, uActive * tipFade * 0.95);
+          float spec1 = pow(max(dot(N, normalize(L1 + V)), 0.0), 28.0);
+          vec3 L2 = normalize(vec3(-0.4, 0.75, -0.45));
+          float spec2 = pow(max(dot(N, normalize(L2 + V)), 0.0), 16.0);
+          col += vec3(0.42, 0.24, 0.08) * fresnel + vec3(0.62, 0.38, 0.14) * (spec1 * 0.22 + spec2 * 0.12);
+          col = clamp(col, 0.0, 0.72);
+          float tipFade = 1.0 - smoothstep(uLength - 0.15, uLength, vUv.x);
+          gl_FragColor = vec4(col, uActive * mix(0.92, 0.99, tipFade));
         }
       `,
     });
@@ -1222,23 +1237,24 @@ export function createQBranchGadgetsRig(
 
         // Beer-Lambert depth absorption: thin meniscus edge glows amber/golden-brown, center -> near-black
         float depth = excess * 1.2;
-        vec3 absorb = exp(-vec3(2.4, 5.4, 12.0) * depth);
-        vec3 thinAmber = vec3(0.68, 0.31, 0.05) * absorb;
-        vec3 deepCenter = vec3(0.012, 0.008, 0.005);
+        vec3 absorb = exp(-vec3(2.3, 5.2, 11.6) * depth);
+        vec3 thinAmber = vec3(0.64, 0.29, 0.05) * absorb;
+        vec3 deepCenter = vec3(0.010, 0.007, 0.004);
         vec3 oilBody = mix(deepCenter, thinAmber, exp(-depth * 2.2));
 
-        // Dielectric Fresnel (IOR ~1.47 -> F0 = 0.0362) & glass-like roughness (0.06) specular
+        // Warm dark-studio sheen & subtle amber meniscus reflection (no blown-out white spot reflections)
         float F0 = 0.0362;
-        float fresnel = F0 + (1.0 - F0) * pow(1.0 - ndotv, 5.0);
+        float fresnel = F0 + (0.24 - F0) * pow(1.0 - ndotv, 4.0);
         vec3 L1 = normalize(vec3(0.22, 0.92, 0.32));
-        float spec1 = pow(max(dot(N, normalize(L1 + V)), 0.0), 140.0);
+        float spec1 = pow(max(dot(N, normalize(L1 + V)), 0.0), 36.0);
         vec3 L2 = normalize(vec3(-0.35, 0.82, -0.44));
-        float spec2 = pow(max(dot(N, normalize(L2 + V)), 0.0), 80.0);
+        float spec2 = pow(max(dot(N, normalize(L2 + V)), 0.0), 22.0);
 
-        vec3 envRefl = vec3(0.90, 0.94, 1.0) * fresnel;
-        vec3 col = oilBody + envRefl + vec3(1.0) * (spec1 * 1.2 + spec2 * 0.6);
+        vec3 warmEnv = vec3(0.36, 0.21, 0.07) * fresnel;
+        vec3 warmSpec = vec3(0.54, 0.32, 0.11) * (spec1 * 0.24 + spec2 * 0.12);
+        vec3 col = clamp(oilBody + warmEnv + warmSpec, 0.0, 0.65);
 
-        gl_FragColor = vec4(col, 0.98);
+        gl_FragColor = vec4(col, 0.97);
       }
     `,
     });
@@ -1417,34 +1433,40 @@ export function createQBranchGadgetsRig(
     }
 
     const nozzleTipZ = rig.leftOilNozzle.position.z - 0.036;
-    const isSputtering = state.oilSlick && rig.oilLidOpen > 0.65;
-    const sputterPulse = Math.sin(rig.time * 7.8) + 0.55 * Math.sin(rig.time * 18.5);
+    const isPouring = state.oilSlick && rig.oilLidOpen > 0.65;
+    // Smooth, heavy high-viscosity pump pressure wave (continuous cohesive flow, never chopped up)
+    const pumpWave = 0.5 + 0.5 * Math.sin(rig.time * 4.2) + 0.25 * Math.sin(rig.time * 9.6);
 
     rig.oilBlobMat.uniforms.uTime.value = rig.time;
-    rig.oilFilamentMesh.position.z = nozzleTipZ + 0.012;
+    rig.oilFilamentMesh.position.z = nozzleTipZ + 0.008;
     rig.oilFilamentMat.uniforms.uTime.value = rig.time;
     rig.oilFilamentMat.uniforms.uActive.value +=
-      ((isSputtering ? 1 : 0) - rig.oilFilamentMat.uniforms.uActive.value) * Math.min(1, safeDt * 9);
-    rig.oilFilamentMat.uniforms.uLength.value = 0.65 + 0.45 * Math.max(0, sputterPulse);
+      ((isPouring ? 1 : 0) - rig.oilFilamentMat.uniforms.uActive.value) * Math.min(1, safeDt * 9);
+    rig.oilFilamentMat.uniforms.uLength.value = 0.78 + 0.20 * Math.sin(rig.time * 4.8);
 
-    if (isSputtering && sputterPulse > -0.25) {
+    if (isPouring) {
       rig.oilSpawnAccum += safeDt;
-      if (rig.oilSpawnAccum >= 0.034) {
-        rig.oilSpawnAccum = 0;
+      const spawnInterval = 0.0075; // High-density overlapping emission (~133 packets/sec)
+      while (rig.oilSpawnAccum >= spawnInterval) {
+        rig.oilSpawnAccum -= spawnInterval;
         const slot = rig.oilDroplets.find((d) => !d.active);
-        if (slot) {
-          slot.active = true;
-          slot.age = 0;
-          slot.life = 1.25;
-          slot.radius = 0.0055 + Math.random() * 0.0042;
-          slot.pos.set(
-            0.6325 + (Math.random() - 0.5) * 0.003,
-            0.785 + (Math.random() - 0.5) * 0.003,
-            nozzleTipZ - 0.08
-          );
-          const jetSpeed = 1.20 + 0.45 * Math.max(0, sputterPulse) + Math.random() * 0.25;
-          slot.vel.set((Math.random() - 0.5) * 0.09, 0.02 + Math.random() * 0.07, -jetSpeed);
-        }
+        if (!slot) break;
+        slot.active = true;
+        slot.age = 0;
+        slot.life = 1.35;
+        // Coherent travelling pressure pulses produce thick globs connected by stretched viscous ligaments
+        const pulse = 0.5 + 0.5 * Math.sin(rig.time * 13.5);
+        slot.radius = 0.0062 + 0.0038 * pulse;
+        slot.elongation = 5.2 + 2.8 * (1.0 - pulse);
+        const swayX = Math.sin(rig.time * 5.2) * 0.0022;
+        const swayY = Math.cos(rig.time * 6.0) * 0.0018;
+        slot.pos.set(0.6325 + swayX, 0.785 + swayY, nozzleTipZ - 0.004);
+        const jetSpeed = 1.34 + 0.10 * pumpWave;
+        slot.vel.set(
+          Math.sin(rig.time * 4.6) * 0.032,
+          0.038 + Math.cos(rig.time * 5.4) * 0.015,
+          -jetSpeed
+        );
       }
     }
 
@@ -1461,10 +1483,10 @@ export function createQBranchGadgetsRig(
             rig.oilImpact.set(d.pos.x, d.pos.z, 0);
             let merged = false;
             for (const mb of rig.oilMetaballs) {
-              if (mb.active && Math.hypot(mb.x - d.pos.x, mb.z - d.pos.z) < 0.14) {
-                mb.r = Math.min(0.28, Math.hypot(mb.r, d.radius * 3.2));
-                mb.vx += (Math.random() - 0.5) * 0.05;
-                mb.vz -= 0.035;
+              if (mb.active && Math.hypot(mb.x - d.pos.x, mb.z - d.pos.z) < 0.16) {
+                mb.r = Math.min(0.32, Math.hypot(mb.r, d.radius * 1.55));
+                mb.vx += (d.vel.x * 0.06 + (Math.random() - 0.5) * 0.03);
+                mb.vz -= 0.018;
                 merged = true;
                 break;
               }
@@ -1475,9 +1497,9 @@ export function createQBranchGadgetsRig(
                 freeMb.active = true;
                 freeMb.x = d.pos.x;
                 freeMb.z = d.pos.z;
-                freeMb.vx = (Math.random() - 0.5) * 0.08;
-                freeMb.vz = -0.07 - Math.random() * 0.06;
-                freeMb.r = 0.055 + Math.random() * 0.025;
+                freeMb.vx = (Math.random() - 0.5) * 0.06;
+                freeMb.vz = -0.055 - Math.random() * 0.04;
+                freeMb.r = 0.065 + Math.random() * 0.025;
               }
             }
           }
@@ -1487,8 +1509,11 @@ export function createQBranchGadgetsRig(
         } else {
           _dummyObj.position.copy(d.pos);
           _dummyObj.lookAt(d.pos.clone().add(d.vel));
-          const speed = d.vel.length();
-          _dummyObj.scale.set(d.radius, d.radius, d.radius * (1.15 + Math.min(0.65, speed * 0.25)));
+          // High-viscosity liquid columns stretch smoothly along their parabolic trajectory and swell near impact
+          const flightProgress = THREE.MathUtils.clamp(d.age / 0.65, 0, 1);
+          const rDynamic = d.radius * THREE.MathUtils.lerp(0.95, 1.18, flightProgress);
+          const lenDynamic = d.radius * d.elongation * THREE.MathUtils.lerp(1.15, 0.78, flightProgress);
+          _dummyObj.scale.set(rDynamic, rDynamic, lenDynamic);
         }
       } else {
         _dummyObj.position.set(0, -10, 0);

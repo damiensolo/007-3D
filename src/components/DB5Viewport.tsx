@@ -851,8 +851,8 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
         const trunkShieldProfile: Array<{ x: number; y: number }> = [];
         const trunkRay = new THREE.Raycaster();
         const trunkDown = new THREE.Vector3(0, -1, 0);
-        for (let i = 0; i <= 36; i++) {
-          const x = -0.36 + (i / 36) * 0.72;
+        for (let i = 0; i <= 48; i++) {
+          const x = -0.48 + (i / 48) * 0.96;
           trunkRay.set(new THREE.Vector3(x, 1.4, -1.71), trunkDown);
           const hits = trunkRay.intersectObjects(trunkMeshes, false);
           if (hits.length > 0) {
