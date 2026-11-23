@@ -52,9 +52,9 @@ Always reference these measured world coordinates when placing or modifying Q-Br
   - **Left Taillight (`+X`, Oil Slick Dispenser):** `x ∈ [0.590, 0.675]`, top amber indicator `y ∈ [0.740, 0.832]`, `z ∈ [-2.218, -2.167]`, top hinge pivot `(0.6325, 0.828, -2.168)`, hollow nozzle centerline `(0.6325, 0.785, -2.165)`, internal wing pump/hose tucked at `x <= 0.585`.
   - **Right Taillight (`-X`, Caltrop / Nail Dispenser):** `x ∈ [-0.675, -0.590]`, full 3-lamp cluster `y ∈ [0.575, 0.832]`, `z ∈ [-2.218, -2.167]`, bottom hinge pivot `(-0.6325, 0.578, -2.172)`.
 - **Roof Panel (`SM_Roof_101_MI_Exhaust_013`) & Passenger Ejector Seat (`SM_Body_101`):**
-  - Roof overall bounds: `x ∈ [-0.592, +0.592]`, `y ∈ [1.250, 1.385]`, `z ∈ [-0.667, +0.300]`.
-  - Jettisonable passenger roof cutout (aligned to `SM_Roof_101` & `MI_Cabin_Leather_C1` headliner vertex grid, never hinged): `x ∈ [0.002, +0.433]`, `z ∈ [-0.430, +0.040]`, center `(0.2175, 1.372, -0.195)`.
-  - Passenger ejector bucket seat & safety harness (`MI_Cabin_Leather_A1`, `MI_Cabin_Belt_A1`, `MI_Cabin1_0` seat rails): `x ∈ [0.055, +0.620]`, `y ∈ [0.290, 0.960]`, `z ∈ [-0.620, +0.285]`, center `(0.34, 0.56, -0.16)`.
+  - Roof overall bounds: `x ∈ [-0.592, +0.592]`, `y ∈ [1.250, 1.385]`, `z ∈ [-0.667, +0.300]`; roof chrome rain gutter (`SM_Roof_101_011`) at `x ∈ [0.558, 0.585]`; left door chrome window frame (`SK_Door_FL_101_001`) at `z ∈ [-0.615, +0.248]`.
+  - Jettisonable passenger roof cutout (all 7 outer roof, chrome rail, inner frame, sun visor, and headliner/trim meshes carved via `clipMeshByRoundedRect` with `flipWinding = srcMesh.matrixWorld.determinant() < 0`, 100% flush & seamless when closed with zero surface pins/latches/stencils, aligned inboard of the cant rail and spanning the door chrome window trim width): `x ∈ [0.005, +0.518]`, `z ∈ [-0.595, +0.215]`, corner radius `r = 0.068`, center `(0.2615, 1.372, -0.190)`.
+  - Minimal passenger ejector bucket seat (`MI_Cabin_Leather_A1_0` connected components only, no extra floor rails/door trim/oversized tray, compact twin compressed-air pistons + floor cylinders + Stage 2 white-blue compressed-air vapour burst `ejectAirPoints` launching skyward `+1.18m Y, -0.22m Z`): center `(0.33, 0.56, -0.14)`.
 
 ---
 

@@ -852,8 +852,13 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
           if (n.includes('sk_trunk_101')) trunkMeshes.push(obj);
           if (n.includes('sm_light_b_101')) rearLightMeshes.push(obj);
           if (
-            (n.includes('sm_roof_101') && n.includes('013_db5')) ||
-            (n.includes('sm_body_101') && n.includes('leather_c1'))
+            (n.includes('sm_roof_101') && (n.includes('013_db5') || n.includes('011_db5'))) ||
+            (n.includes('sm_body_101') &&
+              (n.includes('006_db5') ||
+                n.includes('cabin1_0') ||
+                n.includes('cabin_glass1') ||
+                n.includes('leather_c1') ||
+                n.includes('leather_b1')))
           ) {
             roofHatchSourceMeshes.push(obj);
           }
@@ -1263,27 +1268,28 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
           return 1.380 - 0.14 * x * x - 0.08 * (z + 0.18) * (z + 0.18);
         };
 
-        // Extract passenger-side roof panel & inner headliner using exact SDF triangle clipping
-        // Bounds stay strictly inside the top roof deck (x ∈ [0.020, 0.440], z ∈ [-0.435, +0.055], r = 0.055)
-        const roofPanelCenter = new THREE.Vector3(0.230, roofSurfaceY(0.230, -0.190), -0.190);
+        // Extract full passenger-side roof panel & inner headliner/trim layers using exact SDF triangle clipping
+        // Aligned inboard of the left cant rail (x ∈ [0.005, 0.518]) and widened fore-aft to match the left door chrome window frame (z ∈ [-0.595, +0.215], r = 0.068)
+        const roofPanelCenter = new THREE.Vector3(0.2615, roofSurfaceY(0.2615, -0.190), -0.190);
         const roofPanelMeshes: THREE.Mesh[] = [];
         for (const rMesh of roofHatchSourceMeshes) {
-          const isOuterRoof = rMesh.name.toLowerCase().includes('sm_roof_101');
+          const isOuterRoof = rMesh.name.toLowerCase().includes('sm_roof_101') && rMesh.name.toLowerCase().includes('013_db5');
           const extracted = clipMeshByRoundedRect(
             rMesh,
             roofPanelCenter,
-            0.020,
-            0.440,
-            -0.435,
-            0.055,
-            0.055,
-            1.25
+            0.005,
+            0.518,
+            -0.595,
+            0.215,
+            0.068,
+            1.16
           );
-          // Only attach the outer Silver Birch roof panel to roofHatchGroup so the tan headliner never shows or z-fights from outside
+          // Carve all overlapping outer roof, chrome rail, inner frame, sun visor, and headliner/trim layers so the opening is 100% free of stray triangles,
+          // and attach the outer Silver Birch roof panel (with corrected outward winding) to roofHatchGroup so closed roof is 100% flush & seamless
           if (extracted && isOuterRoof) roofPanelMeshes.push(extracted);
         }
 
-        // Extract ONLY whole connected components of the front passenger bucket seat (zero jagged backrest cuts)
+        // Extract ONLY whole connected components of the front passenger Connolly leather bucket seat (zero jagged backrest cuts, no extra floor/door/rear trim)
         const passengerSeatCenter = new THREE.Vector3(0.33, 0.56, -0.14);
         const passengerSeatMeshes: THREE.Mesh[] = [];
         for (const sMesh of passengerSeatSourceMeshes) {

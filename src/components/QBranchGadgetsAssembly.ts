@@ -65,6 +65,16 @@ interface CaltropItem {
   angVel: THREE.Vector3;
 }
 
+interface EjectAirParticle {
+  active: boolean;
+  age: number;
+  life: number;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  baseSize: number;
+  seed: number;
+}
+
 export interface QBranchGadgetsRig {
   root: THREE.Group;
   frontPlateDrum: THREE.Group;
@@ -74,8 +84,14 @@ export interface QBranchGadgetsRig {
   bulletShieldGroup: THREE.Group;
   roofHatchGroup: THREE.Group;
   roofHatchBasePos: THREE.Vector3;
+  outerBevelMesh: THREE.Mesh;
+  panelSkirtMesh: THREE.Mesh;
+  roofSealMesh: THREE.Mesh;
+  innerFlangeMesh: THREE.Mesh;
   passengerSeatGroup: THREE.Group;
   passengerSeatBasePos: THREE.Vector3;
+  ejectAirPoints: THREE.Points;
+  ejectAirParticles: EjectAirParticle[];
   leftOilLampPivot: THREE.Group;
   leftOilNozzle: THREE.Mesh;
   leftOilArms: THREE.Mesh[];
@@ -195,53 +211,6 @@ function createPlateTexture(variant: 0 | 1 | 2): THREE.CanvasTexture {
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 8;
-  return tex;
-}
-
-/** Generates a Q-Branch hazard stencil texture for the underside of the ejector roof hatch. */
-function createRoofHatchUndersideTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 512;
-  const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = '#181a20';
-  ctx.fillRect(0, 0, 512, 512);
-
-  // Diagonal hazard stripes along edges
-  ctx.fillStyle = '#eab308';
-  for (let i = -512; i < 1024; i += 48) {
-    ctx.beginPath();
-    ctx.moveTo(i, 0);
-    ctx.lineTo(i + 24, 0);
-    ctx.lineTo(i - 16, 40);
-    ctx.lineTo(i - 40, 40);
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(i, 472);
-    ctx.lineTo(i + 24, 472);
-    ctx.lineTo(i - 16, 512);
-    ctx.lineTo(i - 40, 512);
-    ctx.fill();
-  }
-
-  ctx.strokeStyle = '#ef4444';
-  ctx.lineWidth = 6;
-  ctx.strokeRect(32, 62, 448, 388);
-
-  ctx.fillStyle = '#f8fafc';
-  ctx.font = 'bold 34px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('Q-BRANCH MK.IV', 256, 200);
-  ctx.fillStyle = '#ef4444';
-  ctx.font = 'bold 42px sans-serif';
-  ctx.fillText('DANGER: EJECTOR HATCH', 256, 265);
-  ctx.fillStyle = '#94a3b8';
-  ctx.font = 'bold 24px monospace';
-  ctx.fillText('PYROTECHNIC RELEASE LOCK', 256, 325);
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
 
@@ -659,11 +628,13 @@ export function createQBranchGadgetsRig(
   // =========================================================================
   // 4. PASSENGER EJECTOR SEAT & JETTISONABLE ROOF PANEL (RHD: Passenger = +X)
   // =========================================================================
-  // Full passenger-side roof opening matching clipMeshByRoundedRect (x ∈ [0.020, 0.440], z ∈ [-0.435, +0.055], corner radius = 0.055)
-  const HATCH_MIN_X = 0.020;
-  const HATCH_MAX_X = 0.440;
-  const HATCH_MIN_Z = -0.435;
-  const HATCH_MAX_Z = 0.055;
+  // Full passenger-side roof opening matching clipMeshByRoundedRect:
+  // - x ∈ [0.005, 0.518]: sits cleanly on the roof crown inboard of the left cant rail / rain gutter (x = 0.558) so the left edge never overhangs the door
+  // - z ∈ [-0.595, +0.215]: 0.81m fore-aft span aligned with the left door chrome window frame (z ∈ [-0.615, +0.248]) for generous seat + passenger clearance
+  const HATCH_MIN_X = 0.005;
+  const HATCH_MAX_X = 0.518;
+  const HATCH_MIN_Z = -0.595;
+  const HATCH_MAX_Z = 0.215;
   const HATCH_CX = (HATCH_MIN_X + HATCH_MAX_X) * 0.5;
   const HATCH_CZ = (HATCH_MIN_Z + HATCH_MAX_Z) * 0.5;
   const HATCH_HW = (HATCH_MAX_X - HATCH_MIN_X) * 0.5;
@@ -676,42 +647,68 @@ export function createQBranchGadgetsRig(
     return 1.380 - 0.14 * x * x - 0.08 * (z + 0.18) * (z + 0.18);
   };
 
-  // Build rounded rectangular perimeter ring following the exact 3D roof crown sampleRoofY(x, z)
+  // Build exact rounded-rectangle perimeter ring with true circular corner arcs matching sdRect (r = 0.068)
   const buildRoofOpeningRingGeo = (
     outerMargin: number,
     innerMargin: number,
     topOffset: number,
     botOffset: number,
-    cornerRadius = 0.042,
-    segs = 64
+    cornerRadius = 0.068,
+    segs = 256
   ): THREE.BufferGeometry => {
     const getRoundedRectPt = (u: number, hw: number, hz: number, r: number): [number, number] => {
-      const a = u * Math.PI * 2;
-      const ca = Math.cos(a);
-      const sa = Math.sin(a);
-      // Superellipse exponent n=5 produces crisp automotive rounded-rectangle corners matching the photo
-      const exp = 0.22;
-      const sx = Math.sign(ca) * Math.pow(Math.abs(ca), exp);
-      const sz = Math.sign(sa) * Math.pow(Math.abs(sa), exp);
-      return [
-        HATCH_CX + sx * (hw - r * 0.15),
-        HATCH_CZ + sz * (hz - r * 0.15),
-      ];
+      const rr = Math.min(r, hw * 0.8, hz * 0.8);
+      const sx = hw - rr;
+      const sz = hz - rr;
+      const perim = 4 * sx + 4 * sz + 2 * Math.PI * rr;
+      let d = (((u % 1) + 1) % 1) * perim;
+      const arcLen = 0.5 * Math.PI * rr;
+
+      // Walk clockwise around the 4 straight edges and 4 true circular corner arcs
+      if (d < sx) return [HATCH_CX + d, HATCH_CZ + hz];
+      d -= sx;
+      if (d < arcLen) {
+        const a = Math.PI / 2 - (d / arcLen) * (Math.PI / 2);
+        return [HATCH_CX + sx + Math.cos(a) * rr, HATCH_CZ + sz + Math.sin(a) * rr];
+      }
+      d -= arcLen;
+      if (d < 2 * sz) return [HATCH_CX + hw, HATCH_CZ + sz - d];
+      d -= 2 * sz;
+      if (d < arcLen) {
+        const a = -(d / arcLen) * (Math.PI / 2);
+        return [HATCH_CX + sx + Math.cos(a) * rr, HATCH_CZ - sz + Math.sin(a) * rr];
+      }
+      d -= arcLen;
+      if (d < 2 * sx) return [HATCH_CX + sx - d, HATCH_CZ - hz];
+      d -= 2 * sx;
+      if (d < arcLen) {
+        const a = -Math.PI / 2 - (d / arcLen) * (Math.PI / 2);
+        return [HATCH_CX - sx + Math.cos(a) * rr, HATCH_CZ - sz + Math.sin(a) * rr];
+      }
+      d -= arcLen;
+      if (d < 2 * sz) return [HATCH_CX - hw, HATCH_CZ - sz + d];
+      d -= 2 * sz;
+      if (d < arcLen) {
+        const a = Math.PI - (d / arcLen) * (Math.PI / 2);
+        return [HATCH_CX - sx + Math.cos(a) * rr, HATCH_CZ + sz + Math.sin(a) * rr];
+      }
+      d -= arcLen;
+      return [HATCH_CX - sx + d, HATCH_CZ + hz];
     };
 
     const positions: number[] = [];
     const indices: number[] = [];
     for (let i = 0; i <= segs; i++) {
       const u = i / segs;
-      const [ox, oz] = getRoundedRectPt(u, HATCH_HW + outerMargin, HATCH_HZ + outerMargin, cornerRadius);
-      const [ix, iz] = getRoundedRectPt(u, HATCH_HW + innerMargin, HATCH_HZ + innerMargin, cornerRadius);
+      const [ox, oz] = getRoundedRectPt(u, HATCH_HW + outerMargin, HATCH_HZ + outerMargin, cornerRadius + outerMargin);
+      const [ix, iz] = getRoundedRectPt(u, HATCH_HW + innerMargin, HATCH_HZ + innerMargin, Math.max(0.01, cornerRadius + innerMargin));
       const oy = sampleRoofY(ox, oz);
       const iy = sampleRoofY(ix, iz);
       // 4 vertices per cross-section: 0=outerBot, 1=outerTop, 2=innerTop, 3=innerBot
       positions.push(
         ox, oy + botOffset, oz,
         ox, oy + topOffset, oz,
-        ix, iy + topOffset, iz,
+        ix, iy + topOffset - 0.003, iz,
         ix, iy + botOffset, iz
       );
     }
@@ -730,50 +727,30 @@ export function createQBranchGadgetsRig(
     return geo;
   };
 
-  // Minimal, ultra-fine 1.2mm recessed shut-line groove (uniform around all 360° when closed, zero poking ridges)
-  const shutLineGeo = buildRoofOpeningRingGeo(0.0006, -0.0006, -0.0002, -0.008, 0.055, 256);
-  const shutLineMesh = new THREE.Mesh(shutLineGeo, rubberPadMat);
-  root.add(shutLineMesh);
-
-  // Rolled Silver Birch machined bevel collar around the cutout lip (revealed cleanly when panel opens)
-  const outerBevelGeo = buildRoofOpeningRingGeo(0.003, -0.008, -0.0002, -0.014, 0.055, 256);
+  // Rolled Silver Birch machined bevel collar around the cutout lip (hidden when closed so closed roof is 100% seamless without pins or latch lines)
+  const outerBevelGeo = buildRoofOpeningRingGeo(0.002, -0.008, -0.0005, -0.014, 0.068, 256);
   const outerBevelMesh = new THREE.Mesh(outerBevelGeo, silverBirchMat);
   outerBevelMesh.visible = false;
   root.add(outerBevelMesh);
 
-  // Recessed perimeter weatherstrip & channel lip (hidden when closed so it never peeks at steep corners)
-  const roofSealGeo = buildRoofOpeningRingGeo(-0.003, -0.015, -0.003, -0.022, 0.055, 256);
+  // Recessed perimeter weatherstrip & channel lip (recessed below outer Silver Birch skin and hidden when closed)
+  const roofSealGeo = buildRoofOpeningRingGeo(-0.003, -0.015, -0.004, -0.022, 0.068, 256);
   const roofSealMesh = register(
     new THREE.Mesh(roofSealGeo, rubberPadMat),
     'Ejector Roof Opening Weatherstrip & Flange',
     'Molded Neoprene & Anodized Channel',
-    'Flush perimeter weatherstrip and inner roof recess rim with quick-release guide pins.',
-    [0.25, 1.15, -0.15]
+    'Recessed perimeter weatherstrip and inner roof channel lip revealed when the roof panel jettisons.',
+    [0.28, 1.15, -0.20]
   );
+  roofSealMesh.visible = false;
   root.add(roofSealMesh);
 
-  const innerFlangeGeo = buildRoofOpeningRingGeo(-0.010, -0.020, -0.007, -0.025, 0.055, 256);
+  const innerFlangeGeo = buildRoofOpeningRingGeo(-0.011, -0.020, -0.008, -0.024, 0.068, 256);
   const innerFlangeMesh = new THREE.Mesh(innerFlangeGeo, gunmetalMat);
+  innerFlangeMesh.visible = false;
   root.add(innerFlangeMesh);
 
-  // Chrome quick-release alignment pins & spring latch sockets along the inner lip (matches reference photo)
-  const pinCoords: Array<[number, number]> = [
-    [HATCH_CX - 0.10, HATCH_MAX_Z - 0.012],
-    [HATCH_CX + 0.10, HATCH_MAX_Z - 0.012],
-    [HATCH_MIN_X + 0.012, HATCH_CZ - 0.01],
-    [HATCH_MAX_X - 0.012, HATCH_CZ - 0.01],
-  ];
-  for (const [px, pz] of pinCoords) {
-    const py = sampleRoofY(px, pz) - 0.007;
-    const pinBase = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.007, 12), chromeMat);
-    pinBase.position.set(px, py, pz);
-    root.add(pinBase);
-    const pinTip = new THREE.Mesh(new THREE.CylinderGeometry(0.002, 0.003, 0.009, 10), chromeMat);
-    pinTip.position.set(px, py + 0.0045, pz);
-    root.add(pinTip);
-  }
-
-  // Jettisonable Roof Panel Group (extracted live from SM_Roof_101 so it sits 100% flush & seamless when closed)
+  // Jettisonable Roof Panel Group (extracted live from SM_Roof_101 so it sits 100% flush & seamless when closed, zero pins or surface indicators)
   const roofHatchBasePos = ejectorExtract?.roofPanelCenter
     ? ejectorExtract.roofPanelCenter.clone()
     : new THREE.Vector3(HATCH_CX, sampleRoofY(HATCH_CX, HATCH_CZ), HATCH_CZ);
@@ -787,33 +764,33 @@ export function createQBranchGadgetsRig(
         rm,
         'Jettisonable Passenger Roof Panel',
         'Silver Birch Aluminum Roof Section',
-        'Pop-off passenger roof panel released by explosive spring bolts prior to seat ejection.',
-        [0.45, 1.45, -0.15]
+        'Flush seamless passenger roof section released by pneumatic shear bolts prior to compressed-air seat ejection.',
+        [0.45, 1.45, -0.20]
       );
       roofHatchGroup.add(rm);
     }
   } else {
     const fallbackHatch = register(
-      new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.014, 0.49), silverBirchMat),
+      new THREE.Mesh(new THREE.BoxGeometry(0.513, 0.014, 0.81), silverBirchMat),
       'Jettisonable Passenger Roof Panel',
       'Silver Birch Aluminum Roof Section',
-      'Pop-off passenger roof panel released by explosive spring bolts prior to seat ejection.',
-      [0.45, 1.45, -0.15]
+      'Flush seamless passenger roof section released by pneumatic shear bolts prior to compressed-air seat ejection.',
+      [0.45, 1.45, -0.20]
     );
     roofHatchGroup.add(fallbackHatch);
   }
 
-  // Finished machined Silver Birch edge skirt on the jettisoned roof panel (revealed when ejected)
-  const panelSkirtGeo = buildRoofOpeningRingGeo(-0.0005, -0.010, -0.0005, -0.014, 0.055, 256);
+  // Clean recessed Silver Birch edge lip on the jettisoned roof panel (no hazard stencil plate or alignment pins)
+  const panelSkirtGeo = buildRoofOpeningRingGeo(-0.0005, -0.010, -0.0005, -0.013, 0.068, 256);
   panelSkirtGeo.translate(-roofHatchBasePos.x, -roofHatchBasePos.y, -roofHatchBasePos.z);
   const panelSkirtMesh = new THREE.Mesh(panelSkirtGeo, silverBirchMat);
   panelSkirtMesh.visible = false;
   roofHatchGroup.add(panelSkirtMesh);
 
-  // Passenger Ejector Seat Group + Telescoping Under-Seat Hydraulic/Pyrotechnic Ram
+  // Minimal Passenger Bucket Seat Group + Compact Twin Compressed-Air Pistons
   const passengerSeatBasePos = ejectorExtract?.passengerSeatCenter
     ? ejectorExtract.passengerSeatCenter.clone()
-    : new THREE.Vector3(0.34, 0.56, -0.22);
+    : new THREE.Vector3(0.33, 0.56, -0.14);
   const passengerSeatGroup = new THREE.Group();
   passengerSeatGroup.position.copy(passengerSeatBasePos);
   root.add(passengerSeatGroup);
@@ -823,43 +800,99 @@ export function createQBranchGadgetsRig(
       register(
         sm,
         'Q-Branch Passenger Ejector Seat',
-        'Connolly Leather & Martin-Baker Launch Frame',
-        'Passenger bucket seat mounted on a vertical pyrotechnic launch rail triggered by the red gearshift button.',
+        'Connolly Leather Bucket Seat',
+        'Minimal front passenger bucket seat launched skyward by high-pressure compressed-air cylinders.',
         [0.35, 1.25, -0.15]
       );
       passengerSeatGroup.add(sm);
     }
   }
 
-  // Under-seat steel launch frame & telescoping twin booster pistons (travel upward with the seat)
-  const seatTray = register(
-    new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.024, 0.40), gunmetalMat),
-    'Ejector Seat Pyrotechnic Launch Tray',
-    'Reinforced Steel Sabot Cradle',
-    'Under-seat Martin-Baker launch cradle and guide rail assembly.',
-    [0.35, 0.95, -0.15]
-  );
-  seatTray.position.set(0, -0.20, 0.02);
-  passengerSeatGroup.add(seatTray);
-
-  for (const rx of [-0.12, 0.12]) {
-    const boosterRod = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.58, 16), chromeMat);
-    boosterRod.position.set(rx, -0.49, -0.04);
-    passengerSeatGroup.add(boosterRod);
+  // Compact twin compressed-air inner pistons tucked cleanly directly under the seat cushion (no oversized launch tray or long protruding rods)
+  for (const rx of [-0.10, 0.10]) {
+    const airPiston = register(
+      new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.016, 0.22, 14), chromeMat),
+      'Compressed-Air Ejector Seat Piston',
+      'Polished Stainless Pneumatic Ram',
+      'Compact high-pressure pneumatic piston tucked beneath the passenger bucket seat cushion.',
+      [0.35, 0.85, -0.15]
+    );
+    airPiston.position.set(rx, -0.22, -0.04);
+    passengerSeatGroup.add(airPiston);
   }
 
-  // Fixed floor-mounted mortar launch tubes on the passenger floor pan
-  for (const rx of [-0.12, 0.12]) {
+  // Compact twin floor-mounted compressed-air receiver cylinders anchored beneath the seat
+  for (const rx of [-0.10, 0.10]) {
     const floorTube = register(
-      new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.032, 0.24, 16), gunmetalMat),
-      'Ejector Seat Floor Mortar Cylinder',
-      'Breech-Loaded Steel Launch Cylinder',
-      'Twin compressed-gas/pyrotechnic launch cylinders anchored to the right-hand chassis frame.',
+      new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.025, 0.18, 16), gunmetalMat),
+      'Compressed-Air Ejector Floor Cylinder',
+      'High-Pressure Pneumatic Launch Cylinder',
+      'Twin compressed-air launch cylinders anchored to the passenger floor pan.',
       [0.35, 0.45, -0.15]
     );
-    floorTube.position.set(passengerSeatBasePos.x + rx, 0.34, passengerSeatBasePos.z - 0.04);
+    floorTube.position.set(passengerSeatBasePos.x + rx, 0.32, passengerSeatBasePos.z - 0.04);
     root.add(floorTube);
   }
+
+  // High-pressure white-blue compressed-air vapour burst (fires from twin floor cylinders during Stage 2 jet-cockpit launch)
+  const EJECT_AIR_COUNT = 64;
+  const ejectAirGeo = new THREE.BufferGeometry();
+  const ejectAirPos = new Float32Array(EJECT_AIR_COUNT * 3);
+  const ejectAirAge = new Float32Array(EJECT_AIR_COUNT);
+  const ejectAirSize = new Float32Array(EJECT_AIR_COUNT);
+  const ejectAirParticles: EjectAirParticle[] = [];
+  for (let i = 0; i < EJECT_AIR_COUNT; i++) {
+    ejectAirPos[i * 3 + 1] = -10;
+    ejectAirAge[i] = 1;
+    ejectAirSize[i] = 0.18;
+    ejectAirParticles.push({
+      active: false,
+      age: 0,
+      life: 0.45,
+      pos: new THREE.Vector3(0, -10, 0),
+      vel: new THREE.Vector3(),
+      baseSize: 0.22,
+      seed: Math.random() * 100,
+    });
+  }
+  ejectAirGeo.setAttribute('position', new THREE.BufferAttribute(ejectAirPos, 3));
+  ejectAirGeo.setAttribute('aAge', new THREE.BufferAttribute(ejectAirAge, 1));
+  ejectAirGeo.setAttribute('aSize', new THREE.BufferAttribute(ejectAirSize, 1));
+
+  const ejectAirMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.NormalBlending,
+    vertexShader: `
+      attribute float aAge;
+      attribute float aSize;
+      varying float vAge;
+      void main() {
+        vAge = aAge;
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        float growth = mix(0.6, 2.4, smoothstep(0.0, 1.0, aAge));
+        gl_PointSize = aSize * growth * (340.0 / max(-mvPosition.z, 0.1));
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      varying float vAge;
+      void main() {
+        if (vAge >= 1.0) discard;
+        vec2 uv = gl_PointCoord * 2.0 - 1.0;
+        float r2 = dot(uv, uv);
+        if (r2 > 1.0) discard;
+        float radial = exp(-r2 * 2.8);
+        float fade = smoothstep(0.0, 0.08, vAge) * (1.0 - smoothstep(0.25, 1.0, vAge));
+        vec3 col = mix(vec3(0.84, 0.90, 0.96), vec3(0.58, 0.66, 0.74), vAge);
+        gl_FragColor = vec4(col, radial * fade * 0.42);
+      }
+    `,
+  });
+  const ejectAirPoints = new THREE.Points(ejectAirGeo, ejectAirMat);
+  ejectAirPoints.frustumCulled = false;
+  ejectAirPoints.renderOrder = 48;
+  root.add(ejectAirPoints);
 
   // =========================================================================
   // 5. REAR SMOKE, LEFT-TAILLIGHT OIL PUMP, & RIGHT-TAILLIGHT CALTROP DISPENSER
@@ -1492,8 +1525,14 @@ export function createQBranchGadgetsRig(
     bulletShieldGroup,
     roofHatchGroup,
     roofHatchBasePos,
+    outerBevelMesh,
+    panelSkirtMesh,
+    roofSealMesh,
+    innerFlangeMesh,
     passengerSeatGroup,
     passengerSeatBasePos,
+    ejectAirPoints,
+    ejectAirParticles,
     leftOilLampPivot,
     leftOilNozzle,
     leftOilArms,
@@ -1559,22 +1598,29 @@ export function updateQBranchGadgetsRig(
   rig.shieldExtend += ((state.bulletShield ? 1 : 0) - rig.shieldExtend) * Math.min(1, safeDt * 5.5);
   rig.bulletShieldGroup.position.y = -0.326 + rig.shieldExtend * 0.326;
 
-  // 4. Passenger Ejector Seat & Jettisonable Roof Panel Sequence
-  // Phase 1 (0.00s -> 0.45s): Explosive bolts pop the passenger roof section upward & backward into the slipstream
-  // Phase 2 (0.14s -> 0.85s): Pyrotechnic floor cylinders launch the passenger bucket seat vertically out through the open roof
-  if (state.roofHatch && !rig.hatchActivePrev) {
+  // 4. Two-Stage Jet-Cockpit Compressed-Air Ejection Sequence
+  // Stage 1 (0.00s -> 0.36s): Pneumatic bolts shear and blast the flush roof panel upward and rearward out of the slipstream
+  // Stage 2 (0.14s -> 0.52s): White-blue compressed-air vapour burst fires from the twin floor cylinders as the seat rockets skyward (+1.18m Y, -0.22m Z)
+  const triggerEjectBurst = state.roofHatch && !rig.hatchActivePrev;
+  if (triggerEjectBurst) {
     rig.hatchTimer = 0;
   }
   rig.hatchActivePrev = state.roofHatch;
 
+  let airBurstBudget = 0;
   if (state.roofHatch) {
     rig.hatchTimer = Math.min(3.0, rig.hatchTimer + safeDt);
-    const tPanel = THREE.MathUtils.clamp(rig.hatchTimer / 0.55, 0, 1);
-    // Ballistic pop-off trajectory: blasts up and tumbles rearward clear of the roof opening
+    const tPanel = THREE.MathUtils.clamp(rig.hatchTimer / 0.36, 0, 1);
+    // Stage 1 ballistic pop-off trajectory: blasts up and tumbles rearward clear of the roof opening
     rig.hatchOpen = tPanel;
-    const arcY = 2.45 * tPanel - 0.65 * tPanel * tPanel;
-    const driftZ = -2.35 * tPanel * tPanel;
-    const driftX = 0.42 * tPanel;
+    const showCutoutTrim = tPanel > 0.015;
+    rig.outerBevelMesh.visible = showCutoutTrim;
+    rig.panelSkirtMesh.visible = showCutoutTrim;
+    rig.roofSealMesh.visible = showCutoutTrim;
+    rig.innerFlangeMesh.visible = showCutoutTrim;
+    const arcY = 2.65 * tPanel - 0.65 * tPanel * tPanel;
+    const driftZ = -2.45 * tPanel * tPanel;
+    const driftX = 0.38 * tPanel;
     rig.roofHatchGroup.position.set(
       rig.roofHatchBasePos.x + driftX,
       rig.roofHatchBasePos.y + arcY,
@@ -1583,36 +1629,90 @@ export function updateQBranchGadgetsRig(
     rig.roofHatchGroup.rotation.set(-tPanel * 2.1, tPanel * 0.45, -tPanel * 0.75);
     rig.roofHatchGroup.visible = tPanel < 0.98;
 
-    // Seat launches upward right after the roof panel clears the opening
-    const tSeatRaw = THREE.MathUtils.clamp((rig.hatchTimer - 0.14) / 0.48, 0, 1);
-    // Fast explosive launch curve with subtle damped settle at peak extension
+    // Stage 2 (0.14s -> 0.52s): Compressed-air launch rockets the bucket seat skyward & slightly rearward along the backrest angle
+    const tSeatRaw = THREE.MathUtils.clamp((rig.hatchTimer - 0.14) / 0.38, 0, 1);
     const seatEase = 1 - Math.pow(1 - tSeatRaw, 3);
     rig.seatEjectProgress = seatEase;
     rig.passengerSeatGroup.position.set(
-      rig.passengerSeatBasePos.x + 0.04 * seatEase,
-      rig.passengerSeatBasePos.y + 0.96 * seatEase,
-      rig.passengerSeatBasePos.z - 0.08 * seatEase
+      rig.passengerSeatBasePos.x - 0.04 * seatEase,
+      rig.passengerSeatBasePos.y + 1.18 * seatEase,
+      rig.passengerSeatBasePos.z - 0.22 * seatEase
     );
-    rig.passengerSeatGroup.rotation.set(-0.14 * seatEase, 0, -0.04 * seatEase);
+    rig.passengerSeatGroup.rotation.set(-0.16 * seatEase, 0, 0);
+
+    if (rig.hatchTimer >= 0.12 && rig.hatchTimer <= 0.48) {
+      airBurstBudget = 6;
+    }
   } else {
-    // Smoothly retract seat and reseat roof panel flush when reset
+    // Smoothly retract seat and reseat roof panel 100% flush & seamless when reset
     rig.hatchTimer = 0;
     rig.hatchOpen += (0 - rig.hatchOpen) * Math.min(1, safeDt * 7.5);
+    const showCutoutTrim = rig.hatchOpen > 0.015;
+    rig.outerBevelMesh.visible = showCutoutTrim;
+    rig.panelSkirtMesh.visible = showCutoutTrim;
+    rig.roofSealMesh.visible = showCutoutTrim;
+    rig.innerFlangeMesh.visible = showCutoutTrim;
     rig.seatEjectProgress += (0 - rig.seatEjectProgress) * Math.min(1, safeDt * 7.5);
     rig.roofHatchGroup.visible = true;
     rig.roofHatchGroup.position.set(
-      rig.roofHatchBasePos.x + 0.42 * rig.hatchOpen,
-      rig.roofHatchBasePos.y + 1.80 * rig.hatchOpen,
-      rig.roofHatchBasePos.z - 1.65 * rig.hatchOpen
+      rig.roofHatchBasePos.x + 0.38 * rig.hatchOpen,
+      rig.roofHatchBasePos.y + 2.00 * rig.hatchOpen,
+      rig.roofHatchBasePos.z - 1.80 * rig.hatchOpen
     );
     rig.roofHatchGroup.rotation.set(-rig.hatchOpen * 1.4, rig.hatchOpen * 0.3, -rig.hatchOpen * 0.5);
     rig.passengerSeatGroup.position.set(
-      rig.passengerSeatBasePos.x + 0.04 * rig.seatEjectProgress,
-      rig.passengerSeatBasePos.y + 0.96 * rig.seatEjectProgress,
-      rig.passengerSeatBasePos.z - 0.08 * rig.seatEjectProgress
+      rig.passengerSeatBasePos.x - 0.04 * rig.seatEjectProgress,
+      rig.passengerSeatBasePos.y + 1.18 * rig.seatEjectProgress,
+      rig.passengerSeatBasePos.z - 0.22 * rig.seatEjectProgress
     );
-    rig.passengerSeatGroup.rotation.set(-0.14 * rig.seatEjectProgress, 0, -0.04 * rig.seatEjectProgress);
+    rig.passengerSeatGroup.rotation.set(-0.16 * rig.seatEjectProgress, 0, 0);
   }
+
+  // Update compressed-air vapour burst particles from the twin floor cylinders
+  const airPosAttr = rig.ejectAirPoints.geometry.getAttribute('position') as THREE.BufferAttribute;
+  const airAgeAttr = rig.ejectAirPoints.geometry.getAttribute('aAge') as THREE.BufferAttribute;
+  const airSizeAttr = rig.ejectAirPoints.geometry.getAttribute('aSize') as THREE.BufferAttribute;
+  for (let i = 0; i < rig.ejectAirParticles.length; i++) {
+    const ap = rig.ejectAirParticles[i];
+    if (!ap.active && airBurstBudget > 0) {
+      airBurstBudget--;
+      ap.active = true;
+      ap.age = 0;
+      ap.life = 0.38 + Math.random() * 0.22;
+      const sideX = i % 2 === 0 ? -0.10 : 0.10;
+      ap.pos.set(
+        rig.passengerSeatBasePos.x + sideX + (Math.random() - 0.5) * 0.05,
+        0.42 + Math.random() * 0.12,
+        rig.passengerSeatBasePos.z - 0.04 + (Math.random() - 0.5) * 0.05
+      );
+      ap.vel.set(
+        (Math.random() - 0.5) * 0.65,
+        2.8 + Math.random() * 1.8,
+        -0.45 + (Math.random() - 0.5) * 0.45
+      );
+      ap.baseSize = 0.20 + Math.random() * 0.14;
+    }
+    if (ap.active) {
+      ap.age += safeDt;
+      const t = ap.age / ap.life;
+      if (t >= 1) {
+        ap.active = false;
+        airPosAttr.setXYZ(i, 0, -10, 0);
+        airAgeAttr.setX(i, 1);
+      } else {
+        ap.vel.multiplyScalar(Math.pow(0.25, safeDt));
+        ap.pos.addScaledVector(ap.vel, safeDt);
+        airPosAttr.setXYZ(i, ap.pos.x, ap.pos.y, ap.pos.z);
+        airAgeAttr.setX(i, t);
+        airSizeAttr.setX(i, ap.baseSize);
+      }
+    } else {
+      airPosAttr.setXYZ(i, 0, -10, 0);
+    }
+  }
+  airPosAttr.needsUpdate = true;
+  airAgeAttr.needsUpdate = true;
+  airSizeAttr.needsUpdate = true;
 
   // 5A. Volumetric Smoke Screen Particle Simulation
   const posAttr = rig.smokePoints.geometry.getAttribute('position') as THREE.BufferAttribute;
