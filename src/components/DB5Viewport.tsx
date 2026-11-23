@@ -839,12 +839,14 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
 
         registerProceduralSubParts(cabinRig.root.name, 'qbranch_cockpit', cabinRig.subParts);
 
-        // 3. Q-Branch Exterior Gadgets (sample exact SK_Trunk_101 contour at z = -1.71 for flush bullet shield)
+        // 3. Q-Branch Exterior Gadgets (sample exact SK_Trunk_101 contour + split articulated rear taillights)
         const trunkMeshes: THREE.Mesh[] = [];
+        const rearLightMeshes: THREE.Mesh[] = [];
         root.traverse((obj) => {
-          if (obj instanceof THREE.Mesh && obj.name.toLowerCase().includes('sk_trunk_101')) {
-            trunkMeshes.push(obj);
-          }
+          if (!(obj instanceof THREE.Mesh)) return;
+          const n = obj.name.toLowerCase();
+          if (n.includes('sk_trunk_101')) trunkMeshes.push(obj);
+          if (n.includes('sm_light_b_101')) rearLightMeshes.push(obj);
         });
         const trunkShieldProfile: Array<{ x: number; y: number }> = [];
         const trunkRay = new THREE.Raycaster();
@@ -858,7 +860,100 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
           }
         }
 
-        const gadgetsRig = createQBranchGadgetsRig(trunkShieldProfile);
+        const leftTopPivotPos = new THREE.Vector3(0.6325, 0.828, -2.168);
+        const rightClusterPivotPos = new THREE.Vector3(-0.6325, 0.578, -2.172);
+        const leftTopMeshes: THREE.Mesh[] = [];
+        const rightClusterMeshes: THREE.Mesh[] = [];
+
+        for (const lightMesh of rearLightMeshes) {
+          const geo = lightMesh.geometry;
+          const posAttr = geo.attributes.position;
+          const normAttr = geo.attributes.normal;
+          const uvAttr = geo.attributes.uv;
+          if (!posAttr) continue;
+
+          const normalMat = new THREE.Matrix3().getNormalMatrix(lightMesh.matrixWorld);
+          const v0 = new THREE.Vector3();
+          const v1 = new THREE.Vector3();
+          const v2 = new THREE.Vector3();
+          const nTmp = new THREE.Vector3();
+
+          const buildExtractedMesh = (tris: Array<[number, number, number]>, pivot: THREE.Vector3): THREE.Mesh | null => {
+            if (tris.length === 0) return null;
+            const outPos = new Float32Array(tris.length * 9);
+            const outNorm = normAttr ? new Float32Array(tris.length * 9) : null;
+            const outUv = uvAttr ? new Float32Array(tris.length * 6) : null;
+            let pIdx = 0;
+            let uIdx = 0;
+            for (const tri of tris) {
+              for (const vi of tri) {
+                v0.fromBufferAttribute(posAttr, vi).applyMatrix4(lightMesh.matrixWorld).sub(pivot);
+                outPos[pIdx] = v0.x;
+                outPos[pIdx + 1] = v0.y;
+                outPos[pIdx + 2] = v0.z;
+                if (outNorm && normAttr) {
+                  nTmp.fromBufferAttribute(normAttr, vi).applyMatrix3(normalMat).normalize();
+                  outNorm[pIdx] = nTmp.x;
+                  outNorm[pIdx + 1] = nTmp.y;
+                  outNorm[pIdx + 2] = nTmp.z;
+                }
+                if (outUv && uvAttr) {
+                  outUv[uIdx] = uvAttr.getX(vi);
+                  outUv[uIdx + 1] = uvAttr.getY(vi);
+                  uIdx += 2;
+                }
+                pIdx += 3;
+              }
+            }
+            const newGeo = new THREE.BufferGeometry();
+            newGeo.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
+            if (outNorm) newGeo.setAttribute('normal', new THREE.BufferAttribute(outNorm, 3));
+            if (outUv) newGeo.setAttribute('uv', new THREE.BufferAttribute(outUv, 2));
+            newGeo.computeBoundingSphere();
+            const mat = Array.isArray(lightMesh.material)
+              ? lightMesh.material.map((m) => m.clone())
+              : lightMesh.material.clone();
+            return new THREE.Mesh(newGeo, mat);
+          };
+
+          const leftTopTris: Array<[number, number, number]> = [];
+          const rightTris: Array<[number, number, number]> = [];
+          const keptStaticIdx: number[] = [];
+
+          const triCount = geo.index ? geo.index.count / 3 : posAttr.count / 3;
+          for (let t = 0; t < triCount; t++) {
+            const i0 = geo.index ? geo.index.getX(t * 3) : t * 3;
+            const i1 = geo.index ? geo.index.getX(t * 3 + 1) : t * 3 + 1;
+            const i2 = geo.index ? geo.index.getX(t * 3 + 2) : t * 3 + 2;
+            v0.fromBufferAttribute(posAttr, i0).applyMatrix4(lightMesh.matrixWorld);
+            v1.fromBufferAttribute(posAttr, i1).applyMatrix4(lightMesh.matrixWorld);
+            v2.fromBufferAttribute(posAttr, i2).applyMatrix4(lightMesh.matrixWorld);
+            const cx = (v0.x + v1.x + v2.x) / 3;
+            const cy = (v0.y + v1.y + v2.y) / 3;
+            if (cx < 0) {
+              rightTris.push([i0, i1, i2]);
+            } else if (cy > 0.740) {
+              leftTopTris.push([i0, i1, i2]);
+            } else {
+              keptStaticIdx.push(i0, i1, i2);
+            }
+          }
+
+          const ltMesh = buildExtractedMesh(leftTopTris, leftTopPivotPos);
+          if (ltMesh) leftTopMeshes.push(ltMesh);
+          const rcMesh = buildExtractedMesh(rightTris, rightClusterPivotPos);
+          if (rcMesh) rightClusterMeshes.push(rcMesh);
+
+          geo.setIndex(keptStaticIdx);
+          geo.computeBoundingSphere();
+        }
+
+        const gadgetsRig = createQBranchGadgetsRig(trunkShieldProfile, {
+          leftTopMeshes,
+          leftTopPivotPos,
+          rightClusterMeshes,
+          rightClusterPivotPos,
+        });
         scene.add(gadgetsRig.root);
         gadgetsRig.root.updateMatrixWorld(true);
         gadgetsRigRef.current = gadgetsRig;

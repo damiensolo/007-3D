@@ -28,6 +28,24 @@ interface OilDroplet {
   vel: THREE.Vector3;
 }
 
+export interface TailLightSplitData {
+  leftTopMeshes: THREE.Mesh[];
+  leftTopPivotPos: THREE.Vector3;
+  rightClusterMeshes: THREE.Mesh[];
+  rightClusterPivotPos: THREE.Vector3;
+}
+
+interface CaltropItem {
+  active: boolean;
+  settled: boolean;
+  age: number;
+  life: number;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  rot: THREE.Euler;
+  angVel: THREE.Vector3;
+}
+
 export interface QBranchGadgetsRig {
   root: THREE.Group;
   frontPlateDrum: THREE.Group;
@@ -36,18 +54,27 @@ export interface QBranchGadgetsRig {
   rearRams: THREE.Group[];
   bulletShieldGroup: THREE.Group;
   roofHatchPivot: THREE.Group;
+  leftOilLampPivot: THREE.Group;
+  leftOilNozzle: THREE.Mesh;
+  rightCaltropPivot: THREE.Group;
   subParts: GadgetSubPart[];
   plateAngle: number;
   ramFrontExtend: number;
   ramRearExtend: number;
   shieldExtend: number;
   hatchOpen: number;
+  oilLidOpen: number;
+  caltropLidOpen: number;
   smokePoints: THREE.Points;
   smokeParticles: SmokeParticle[];
-  oilInstanced: THREE.InstancedMesh;
+  oilJetMat: THREE.ShaderMaterial;
+  oilStreamProg: number;
+  oilMistPoints: THREE.Points;
   oilDroplets: OilDroplet[];
   oilPuddleMat: THREE.ShaderMaterial;
   oilSpread: number;
+  caltropInstanced: THREE.InstancedMesh;
+  caltrops: CaltropItem[];
   time: number;
 }
 
@@ -197,8 +224,41 @@ function createRoofHatchUndersideTexture(): THREE.CanvasTexture {
  * 4. Passenger-Side Ejector Seat Roof Hatch
  * 5. Rear Exhaust Smoke Screen (Custom GLSL FBM Cloud Shaders) & Oil Slick (Arc Stream + Iridescent Puddle)
  */
+/** Builds a true 4-sided tetrahedral steel caltrop geometry (one spike always points straight up). */
+function buildTetraCaltropGeometry(radius = 0.022): THREE.BufferGeometry {
+  const dirs = [
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(Math.sqrt(8 / 9), -1 / 3, 0),
+    new THREE.Vector3(-Math.sqrt(2 / 9), -1 / 3, Math.sqrt(2 / 3)),
+    new THREE.Vector3(-Math.sqrt(2 / 9), -1 / 3, -Math.sqrt(2 / 3)),
+  ];
+  const positions: number[] = [];
+  const baseR = radius * 0.22;
+  const upRef = new THREE.Vector3(0, 1, 0);
+  const altRef = new THREE.Vector3(1, 0, 0);
+
+  for (const d of dirs) {
+    const tip = d.clone().multiplyScalar(radius);
+    const ref = Math.abs(d.dot(upRef)) > 0.9 ? altRef : upRef;
+    const t1 = new THREE.Vector3().crossVectors(d, ref).normalize().multiplyScalar(baseR);
+    const t2 = new THREE.Vector3().crossVectors(d, t1).normalize().multiplyScalar(baseR);
+    const b0 = t1.clone();
+    const b1 = t1.clone().multiplyScalar(-0.5).addScaledVector(t2, Math.sqrt(3) / 2);
+    const b2 = t1.clone().multiplyScalar(-0.5).addScaledVector(t2, -Math.sqrt(3) / 2);
+
+    for (const [a, b] of [[b0, b1], [b1, b2], [b2, b0]]) {
+      positions.push(tip.x, tip.y, tip.z, a.x, a.y, a.z, b.x, b.y, b.z);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
   export function createQBranchGadgetsRig(
-    trunkShieldProfile?: Array<{ x: number; y: number }>
+    trunkShieldProfile?: Array<{ x: number; y: number }>,
+    tailLightSplits?: TailLightSplitData
   ): QBranchGadgetsRig {
     const root = new THREE.Group();
     root.name = 'QBranch_ExteriorGadgets';
@@ -596,7 +656,7 @@ function createRoofHatchUndersideTexture(): THREE.CanvasTexture {
     roofHatchPivot.add(hatchInner);
 
     // =========================================================================
-    // 5. REAR SMOKE SCREEN & OIL SLICK HARDWARE + CUSTOM GLSL FX
+    // 5. REAR SMOKE, LEFT-TAILLIGHT OIL PUMP, & RIGHT-TAILLIGHT CALTROP DISPENSER
     // =========================================================================
     for (const sideX of [-0.43, 0.43]) {
       const smokeNozzle = register(
@@ -611,17 +671,155 @@ function createRoofHatchUndersideTexture(): THREE.CanvasTexture {
       root.add(smokeNozzle);
     }
 
-    for (const sideX of [-0.19, 0.19]) {
-      const oilNozzle = register(
-        new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.014, 0.07, 14), brassMat),
-        'Rear Oil Slick Injector',
-        'Turned Brass Pressure Nozzle',
-        'Pressurized under-valance nozzle spraying slick hydraulic oil behind the rear tyres.',
-        [sideX * 0.5, -0.15, -1.2]
+    // --- 5A. LEFT TAILLIGHT (+X): Hinged Amber Lamp + Internal Oil Pump & Nozzle ---
+    const leftOilLampPivot = new THREE.Group();
+    leftOilLampPivot.position.copy(
+      tailLightSplits?.leftTopPivotPos ?? new THREE.Vector3(0.6325, 0.828, -2.168)
+    );
+    root.add(leftOilLampPivot);
+
+    if (tailLightSplits) {
+      for (const m of tailLightSplits.leftTopMeshes) {
+        register(
+          m,
+          'Left Amber Indicator (Oil Nozzle Cover)',
+          'Hinged Lucas Amber Lamp',
+          'Top-hinged left rear amber indicator lifting 75° to expose the pressurized oil slick nozzle.',
+          [0.85, 0.35, -1.25]
+        );
+        leftOilLampPivot.add(m);
+      }
+    }
+
+    const cavityMat = new THREE.MeshStandardMaterial({
+      color: 0x090b0f,
+      roughness: 0.85,
+      metalness: 0.2,
+    });
+    const leftCavity = new THREE.Mesh(new THREE.BoxGeometry(0.068, 0.080, 0.065), cavityMat);
+    leftCavity.position.set(0.6325, 0.785, -2.150);
+    root.add(leftCavity);
+
+    for (const sx of [0.612, 0.652]) {
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.008, 0.045), chromeMat);
+      arm.position.set(sx - 0.6325, -0.025, -0.020);
+      leftOilLampPivot.add(arm);
+    }
+
+    // Hollow machined dispensing pipe (LatheGeometry with real inner bore facing -Z)
+    const nozzlePipeGeo = new THREE.LatheGeometry(
+      [
+        new THREE.Vector2(0.0125, -0.0375),
+        new THREE.Vector2(0.0125, 0.022),
+        new THREE.Vector2(0.0108, 0.026),
+        new THREE.Vector2(0.0108, 0.0365),
+        new THREE.Vector2(0.0092, 0.0375),
+        new THREE.Vector2(0.0056, 0.0375),
+        new THREE.Vector2(0.0052, -0.015),
+        new THREE.Vector2(0.0, -0.015),
+      ],
+      24
+    );
+    const leftOilNozzle = register(
+      new THREE.Mesh(nozzlePipeGeo, chromeMat),
+      'Left Taillight Oil Slick Nozzle',
+      'Machined Hollow Aluminum Pipe',
+      'Retractable hollow high-pressure oil dispensing pipe concealed behind the hinged left amber indicator.',
+      [0.88, 0.25, -1.22]
+    );
+    leftOilNozzle.rotation.x = -Math.PI / 2; // +Y hollow tip points toward -Z (rear)
+    leftOilNozzle.position.set(0.6325, 0.785, -2.165);
+    root.add(leftOilNozzle);
+
+    const aluFrameMat = new THREE.MeshStandardMaterial({
+      color: 0xcbd5e1,
+      metalness: 0.86,
+      roughness: 0.26,
+    });
+    const oilRackFrame = register(
+      new THREE.Mesh(new THREE.BoxGeometry(0.064, 0.21, 0.070), aluFrameMat),
+      'Q-Branch Oil Pump Mounting Frame',
+      'Slotted Machined Aluminum',
+      'Internal left-wing structural frame supporting the hydraulic oil pump and upper nozzle.',
+      [0.92, 0.20, -1.10]
+    );
+    oilRackFrame.position.set(0.625, 0.68, -2.06);
+    root.add(oilRackFrame);
+
+    const oilPumpCylinder = register(
+      new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.135, 20), aluFrameMat),
+      'Pressurized Oil Slick Pump Cylinder',
+      'Turned Aluminum & Brass Manifold',
+      'High-pressure hydraulic pump driving slick oil up the braided hose to the left taillight.',
+      [0.95, 0.16, -1.05]
+    );
+    oilPumpCylinder.rotation.x = Math.PI / 2;
+    oilPumpCylinder.position.set(0.620, 0.635, -1.97);
+    root.add(oilPumpCylinder);
+
+    const hoseCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0.620, 0.655, -1.91),
+      new THREE.Vector3(0.622, 0.745, -1.95),
+      new THREE.Vector3(0.632, 0.785, -2.12),
+    ]);
+    const oilHose = register(
+      new THREE.Mesh(new THREE.TubeGeometry(hoseCurve, 16, 0.0085, 10, false), rubberPadMat),
+      'High-Pressure Oil Feed Hose',
+      'Reinforced Braided Hydraulic Line',
+      'Pressurized feed line routing oil from the wing pump to the hinged taillight nozzle.',
+      [0.94, 0.22, -1.08]
+    );
+    root.add(oilHose);
+
+    // --- 5B. RIGHT TAILLIGHT (-X): Bottom-Hinged Cluster + Caltrop / Nail Dispenser ---
+    const rightCaltropPivot = new THREE.Group();
+    rightCaltropPivot.position.copy(
+      tailLightSplits?.rightClusterPivotPos ?? new THREE.Vector3(-0.6325, 0.578, -2.172)
+    );
+    root.add(rightCaltropPivot);
+
+    if (tailLightSplits) {
+      for (const m of tailLightSplits.rightClusterMeshes) {
+        register(
+          m,
+          'Right Taillight Cluster (Caltrop Hatch)',
+          'Bottom-Hinged Lucas Cluster',
+          'Entire 3-lens right taillight assembly hinged at the bottom to drop open and release road caltrops.',
+          [-0.85, 0.25, -1.25]
+        );
+        rightCaltropPivot.add(m);
+      }
+    }
+
+    const rightCavity = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.235, 0.075), cavityMat);
+    rightCavity.position.set(-0.6325, 0.704, -2.148);
+    root.add(rightCavity);
+
+    const rightHinge = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.068, 12), chromeMat);
+    rightHinge.rotation.z = Math.PI / 2;
+    rightCaltropPivot.add(rightHinge);
+
+    const caltropHopper = register(
+      new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.20, 0.085), aluFrameMat),
+      'Caltrop Magazine & Ejector Rack',
+      'Machined Aluminum Hopper',
+      'Internal right-wing vertical magazine feeding 4-sided steel tire-shredding caltrops.',
+      [-0.92, 0.20, -1.10]
+    );
+    caltropHopper.position.set(-0.6325, 0.70, -2.06);
+    root.add(caltropHopper);
+
+    for (const cx of [-0.646, -0.619]) {
+      const chute = register(
+        new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.095, 14), gunmetalMat),
+        'Caltrop Ejector Chute',
+        'Hardened Steel Launch Tube',
+        'Spring-loaded dual launch chute expelling four-sided caltrops onto the road behind.',
+        [-0.90, 0.22, -1.20]
       );
-      oilNozzle.rotation.x = Math.PI / 2 + 0.18;
-      oilNozzle.position.set(sideX, 0.265, -2.235);
-      root.add(oilNozzle);
+      chute.rotation.x = Math.PI / 2 + 0.14;
+      chute.position.set(cx, 0.675, -2.14);
+      root.add(chute);
     }
 
     // --- A. Volumetric Billowing Smoke Screen (Half-Lambert Lit FBM Cloud Shader) ---
@@ -744,30 +942,145 @@ function createRoofHatchUndersideTexture(): THREE.CanvasTexture {
     smokePoints.renderOrder = 50; // Always render after transparent car glass, lights, dashboard, and badges
     root.add(smokePoints);
 
-    // --- B. Pressurized Oil Slick Arc Stream (InstancedMesh) + Wet Specular Iridescent Puddle ---
-    const OIL_COUNT = 120;
+    // --- B. Continuous Pressurized Fluid Jet (GLSL Shader) + Fine Soft-Mist Spray ---
+    const jetCurvePoints: THREE.Vector3[] = [];
+    const jetSteps = 28;
+    for (let i = 0; i <= jetSteps; i++) {
+      const t = i / jetSteps;
+      const z = -2.268 - t * 1.48;
+      const y = 0.785 - 0.76 * t * t;
+      jetCurvePoints.push(new THREE.Vector3(0.6325, y, z));
+    }
+    const jetCurve = new THREE.CatmullRomCurve3(jetCurvePoints);
+    const jetGeo = new THREE.TubeGeometry(jetCurve, 40, 1.0, 14, false);
+    // Taper tube radius along length: tight 5.2mm at nozzle bore -> 36mm aerated spray fan near asphalt
+    const jetPos = jetGeo.attributes.position;
+    const jetUv = jetGeo.attributes.uv;
+    const tmpPt = new THREE.Vector3();
+    for (let i = 0; i < jetPos.count; i++) {
+      const u = jetUv.getX(i);
+      const center = jetCurve.getPointAt(THREE.MathUtils.clamp(u, 0, 1));
+      const r = THREE.MathUtils.lerp(0.0052, 0.038, Math.pow(u, 1.35));
+      tmpPt.fromBufferAttribute(jetPos, i).sub(center).multiplyScalar(r).add(center);
+      jetPos.setXYZ(i, tmpPt.x, tmpPt.y, tmpPt.z);
+    }
+    jetGeo.computeVertexNormals();
+
+    const oilJetMat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      uniforms: {
+        uTime: { value: 0 },
+        uFlow: { value: 0 },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        varying vec3 vNormal;
+        varying vec3 vViewDir;
+        void main() {
+          vUv = uv;
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vNormal = normalize(mat3(modelMatrix) * normal);
+          vViewDir = normalize(cameraPosition - wp.xyz);
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }
+      `,
+      fragmentShader: `
+        varying vec2 vUv;
+        varying vec3 vNormal;
+        varying vec3 vViewDir;
+        uniform float uTime;
+        uniform float uFlow;
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float noise(vec2 p) {
+          vec2 i = floor(p); vec2 f = fract(p);
+          vec2 u = f * f * (3.0 - 2.0 * f);
+          return mix(
+            mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+            mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
+            u.y
+          );
+        }
+        void main() {
+          if (uFlow <= 0.01) discard;
+          float u = vUv.x;
+          float reveal = smoothstep(u - 0.08, u + 0.02, uFlow);
+          if (reveal <= 0.01) discard;
+
+          float flowScroll = u * 10.0 - uTime * 3.8;
+          float n1 = noise(vec2(flowScroll, vUv.y * 6.0));
+          float n2 = noise(vec2(flowScroll * 2.1 + 3.7, vUv.y * 12.0));
+          float breakup = mix(1.0, smoothstep(0.22, 0.78, n1 * 0.65 + n2 * 0.35), smoothstep(0.12, 0.85, u));
+
+          float fresnel = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewDir))), 2.2);
+          float coreAlpha = mix(0.92, 0.32, pow(u, 0.9)) * breakup * reveal * (1.0 - smoothstep(0.88, 1.0, u));
+          if (coreAlpha < 0.02) discard;
+
+          vec3 darkOil = vec3(0.055, 0.048, 0.042);
+          vec3 aeratedMist = vec3(0.42, 0.44, 0.46);
+          vec3 col = mix(darkOil, aeratedMist, smoothstep(0.25, 0.9, u) * 0.65 + fresnel * 0.45);
+          col += vec3(0.85, 0.88, 0.92) * pow(max(0.0, dot(normalize(vNormal), normalize(vec3(0.3, 0.9, 0.3)))), 24.0) * 0.55;
+          gl_FragColor = vec4(col, coreAlpha);
+        }
+      `,
+    });
+    const oilJetMesh = new THREE.Mesh(jetGeo, oilJetMat);
+    oilJetMesh.renderOrder = 2;
+    root.add(oilJetMesh);
+
+    // Fine soft-mist aerosol spray around the liquid jet (no solid Tic-Tac spheres)
+    const OIL_COUNT = 200;
     const oilDroplets: OilDroplet[] = [];
+    const oilPosAttr = new Float32Array(OIL_COUNT * 3);
+    const oilAgeAttr = new Float32Array(OIL_COUNT);
     for (let i = 0; i < OIL_COUNT; i++) {
       oilDroplets.push({
         active: false,
         age: 0,
-        life: 0.7,
+        life: 0.9,
         pos: new THREE.Vector3(0, -10, 0),
         vel: new THREE.Vector3(),
       });
+      oilPosAttr[i * 3 + 1] = -10;
     }
-    const oilDropGeo = new THREE.SphereGeometry(0.016, 8, 6);
-    const oilDropMat = new THREE.MeshPhysicalMaterial({
-      color: 0x050507,
-      roughness: 0.08,
-      metalness: 0.05,
-      clearcoat: 0.55,
-      clearcoatRoughness: 0.08,
-      envMapIntensity: 0.25,
+    const oilMistGeo = new THREE.BufferGeometry();
+    oilMistGeo.setAttribute('position', new THREE.BufferAttribute(oilPosAttr, 3));
+    oilMistGeo.setAttribute('aAge', new THREE.BufferAttribute(oilAgeAttr, 1));
+    const oilMistMat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      uniforms: {
+        uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
+      },
+      vertexShader: `
+        attribute float aAge;
+        varying float vAge;
+        uniform float uPixelRatio;
+        void main() {
+          vAge = aAge;
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          gl_Position = projectionMatrix * mv;
+          float sz = mix(4.0, 14.0, aAge);
+          gl_PointSize = sz * uPixelRatio * (1.8 / max(0.4, -mv.z));
+        }
+      `,
+      fragmentShader: `
+        varying float vAge;
+        void main() {
+          float d = length(gl_PointCoord - 0.5) * 2.0;
+          if (d > 1.0) discard;
+          float soft = pow(1.0 - d, 1.8);
+          float alpha = soft * (1.0 - smoothstep(0.55, 1.0, vAge)) * 0.34;
+          vec3 col = mix(vec3(0.18, 0.17, 0.16), vec3(0.55, 0.57, 0.60), soft * 0.5);
+          gl_FragColor = vec4(col, alpha);
+        }
+      `,
     });
-    const oilInstanced = new THREE.InstancedMesh(oilDropGeo, oilDropMat, OIL_COUNT);
-    oilInstanced.frustumCulled = false;
-    root.add(oilInstanced);
+    const oilMistPoints = new THREE.Points(oilMistGeo, oilMistMat);
+    oilMistPoints.frustumCulled = false;
+    oilMistPoints.renderOrder = 2;
+    root.add(oilMistPoints);
 
     const oilPuddleMat = new THREE.ShaderMaterial({
       transparent: true,
@@ -847,11 +1160,36 @@ function createRoofHatchUndersideTexture(): THREE.CanvasTexture {
     `,
     });
 
-    const oilPuddle = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 5.4), oilPuddleMat);
+    const oilPuddle = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 5.2), oilPuddleMat);
     oilPuddle.rotation.x = -Math.PI / 2;
-    oilPuddle.position.set(0, 0.023, -4.15);
+    oilPuddle.position.set(0.58, 0.023, -4.10);
     oilPuddle.renderOrder = 1;
     root.add(oilPuddle);
+
+    // --- C. Four-Sided Steel Caltrops (InstancedMesh, Right Taillight Dispenser) ---
+    const CALTROP_COUNT = 48;
+    const caltrops: CaltropItem[] = [];
+    for (let i = 0; i < CALTROP_COUNT; i++) {
+      caltrops.push({
+        active: false,
+        settled: false,
+        age: 0,
+        life: 6.0,
+        pos: new THREE.Vector3(0, -10, 0),
+        vel: new THREE.Vector3(),
+        rot: new THREE.Euler(),
+        angVel: new THREE.Vector3(),
+      });
+    }
+    const caltropGeo = buildTetraCaltropGeometry(0.024);
+    const caltropMat = new THREE.MeshStandardMaterial({
+      color: 0xcbd5e1,
+      metalness: 0.9,
+      roughness: 0.28,
+    });
+    const caltropInstanced = new THREE.InstancedMesh(caltropGeo, caltropMat, CALTROP_COUNT);
+    caltropInstanced.frustumCulled = false;
+    root.add(caltropInstanced);
 
     return {
       root,
@@ -861,18 +1199,27 @@ function createRoofHatchUndersideTexture(): THREE.CanvasTexture {
       rearRams,
       bulletShieldGroup,
       roofHatchPivot,
+      leftOilLampPivot,
+      leftOilNozzle,
+      rightCaltropPivot,
       subParts,
       plateAngle: 0,
       ramFrontExtend: 0,
       ramRearExtend: 0,
       shieldExtend: 0,
       hatchOpen: 0,
+      oilLidOpen: 0,
+      caltropLidOpen: 0,
       smokePoints,
       smokeParticles,
-      oilInstanced,
+      oilJetMat,
+      oilStreamProg: 0,
+      oilMistPoints,
       oilDroplets,
       oilPuddleMat,
       oilSpread: 0,
+      caltropInstanced,
+      caltrops,
       time: 0,
     };
   }
@@ -973,43 +1320,120 @@ function createRoofHatchUndersideTexture(): THREE.CanvasTexture {
     seedAttr.needsUpdate = true;
     rotAttr.needsUpdate = true;
 
-    // 5B. Oil Slick Fluid Arc Stream + Spreading Iridescent Puddle
-    let oilSpawnBudget = state.oilSlick ? 5 : 0;
+    // 5B. Left Taillight Hinge & Continuous Fluid Jet + Soft Mist + Iridescent Puddle
+    rig.oilLidOpen += ((state.oilSlick ? 1 : 0) - rig.oilLidOpen) * Math.min(1, safeDt * 7.5);
+    rig.leftOilLampPivot.rotation.x = rig.oilLidOpen * 1.32; // Lifts top amber lamp ~75° upward
+    rig.leftOilNozzle.position.z = -2.165 - rig.oilLidOpen * 0.065;
+
+    const jetTarget = state.oilSlick && rig.oilLidOpen > 0.65 ? 1 : 0;
+    rig.oilStreamProg += (jetTarget - rig.oilStreamProg) * Math.min(1, safeDt * (jetTarget ? 2.6 : 4.5));
+    rig.oilJetMat.uniforms.uFlow.value = rig.oilStreamProg;
+    rig.oilJetMat.uniforms.uTime.value = rig.time;
+
+    const nozzleTipZ = rig.leftOilNozzle.position.z - 0.038;
+    const oilPosAttr = rig.oilMistPoints.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const oilAgeAttr = rig.oilMistPoints.geometry.getAttribute('aAge') as THREE.BufferAttribute;
+
+    let oilSpawnBudget = jetTarget ? 4 : 0;
     for (let i = 0; i < rig.oilDroplets.length; i++) {
       const d = rig.oilDroplets[i];
       if (!d.active && oilSpawnBudget > 0) {
         oilSpawnBudget--;
         d.active = true;
         d.age = 0;
-        d.life = 0.55 + Math.random() * 0.28;
-        const side = i % 2 === 0 ? -0.19 : 0.19;
-        d.pos.set(side + (Math.random() - 0.5) * 0.03, 0.265, -2.26);
-        d.vel.set((Math.random() - 0.5) * 0.35, -0.15 + Math.random() * 0.22, -(2.4 + Math.random() * 1.1));
+        d.life = 0.85 + Math.random() * 0.35;
+        d.pos.set(
+          0.6325 + (Math.random() - 0.5) * 0.005,
+          0.785 + (Math.random() - 0.5) * 0.005,
+          nozzleTipZ
+        );
+        d.vel.set((Math.random() - 0.5) * 0.16, -0.02 + Math.random() * 0.08, -(1.45 + Math.random() * 0.55));
       }
 
       if (d.active) {
         d.age += safeDt;
-        d.vel.y -= 5.4 * safeDt;
+        d.vel.y -= 2.2 * safeDt;
         d.pos.addScaledVector(d.vel, safeDt);
-        if (d.pos.y <= 0.025 || d.age >= d.life) {
+        const t = d.age / d.life;
+        if (d.pos.y <= 0.025 || t >= 1) {
           d.active = false;
+          oilPosAttr.setXYZ(i, 0, -10, 0);
+          oilAgeAttr.setX(i, 1);
+        } else {
+          oilPosAttr.setXYZ(i, d.pos.x, d.pos.y, d.pos.z);
+          oilAgeAttr.setX(i, t);
+        }
+      } else {
+        oilPosAttr.setXYZ(i, 0, -10, 0);
+      }
+    }
+    oilPosAttr.needsUpdate = true;
+    oilAgeAttr.needsUpdate = true;
+
+    rig.oilSpread += ((state.oilSlick ? 1 : 0) - rig.oilSpread) * Math.min(1, safeDt * (state.oilSlick ? 1.8 : 0.8));
+    rig.oilPuddleMat.uniforms.uSpread.value = rig.oilSpread;
+    rig.oilPuddleMat.uniforms.uTime.value = rig.time;
+
+    // 5C. Right Taillight Hinge & 4-Sided Steel Caltrop Dispenser
+    rig.caltropLidOpen += ((state.caltrops ? 1 : 0) - rig.caltropLidOpen) * Math.min(1, safeDt * 7.5);
+    rig.rightCaltropPivot.rotation.x = -rig.caltropLidOpen * 1.65; // Flips entire right cluster ~95° down
+
+    let caltropSpawnBudget = state.caltrops && rig.caltropLidOpen > 0.65 ? 2 : 0;
+    for (let i = 0; i < rig.caltrops.length; i++) {
+      const c = rig.caltrops[i];
+      if (!c.active && caltropSpawnBudget > 0) {
+        caltropSpawnBudget--;
+        c.active = true;
+        c.settled = false;
+        c.age = 0;
+        c.life = 5.5 + Math.random() * 2.0;
+        c.pos.set(-0.6325 + (Math.random() - 0.5) * 0.025, 0.68, -2.19);
+        c.vel.set(
+          (Math.random() - 0.5) * 0.55,
+          0.15 + Math.random() * 0.35,
+          -(1.8 + Math.random() * 1.4)
+        );
+        c.rot.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+        c.angVel.set((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14);
+      }
+
+      if (c.active) {
+        c.age += safeDt;
+        if (c.age >= c.life && !state.caltrops) {
+          c.active = false;
+        } else if (!c.settled) {
+          c.vel.y -= 6.5 * safeDt;
+          c.pos.addScaledVector(c.vel, safeDt);
+          c.rot.x += c.angVel.x * safeDt;
+          c.rot.y += c.angVel.y * safeDt;
+          c.rot.z += c.angVel.z * safeDt;
+          if (c.pos.y <= 0.029) {
+            c.pos.y = 0.029;
+            if (Math.abs(c.vel.y) > 0.45) {
+              c.vel.y = -c.vel.y * 0.32;
+              c.vel.x *= 0.6;
+              c.vel.z *= 0.6;
+            } else {
+              c.settled = true;
+              // Settle flat with 1 spike pointing straight up
+              c.rot.set(0, Math.random() * Math.PI * 2, 0);
+            }
+          }
+        }
+        if (c.active) {
+          _dummyObj.position.copy(c.pos);
+          _dummyObj.rotation.copy(c.rot);
+          _dummyObj.scale.setScalar(1);
+        } else {
           _dummyObj.position.set(0, -10, 0);
           _dummyObj.scale.setScalar(0.001);
-        } else {
-          _dummyObj.position.copy(d.pos);
-          _dummyObj.lookAt(d.pos.clone().add(d.vel));
-          _dummyObj.scale.set(0.85, 0.85, 3.6);
         }
       } else {
         _dummyObj.position.set(0, -10, 0);
         _dummyObj.scale.setScalar(0.001);
       }
       _dummyObj.updateMatrix();
-      rig.oilInstanced.setMatrixAt(i, _dummyObj.matrix);
+      rig.caltropInstanced.setMatrixAt(i, _dummyObj.matrix);
     }
-    rig.oilInstanced.instanceMatrix.needsUpdate = true;
-
-    rig.oilSpread += ((state.oilSlick ? 1 : 0) - rig.oilSpread) * Math.min(1, safeDt * (state.oilSlick ? 1.8 : 0.8));
-    rig.oilPuddleMat.uniforms.uSpread.value = rig.oilSpread;
-    rig.oilPuddleMat.uniforms.uTime.value = rig.time;
+    rig.caltropInstanced.instanceMatrix.needsUpdate = true;
   }

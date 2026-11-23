@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 export type QBranchGadgetKey =
   | 'oilSlick'
+  | 'caltrops'
   | 'smokeScreen'
   | 'frontRam'
   | 'rearRam'
@@ -16,6 +17,7 @@ export interface QBranchGadgetStates {
   /** 0 = Position 1 (BMT 216A), 1 = Position 2 (4711-EA-62), 2 = Position 3 (LU 6789) */
   plateIndex: 0 | 1 | 2;
   oilSlick: boolean;
+  caltrops: boolean;
   smokeScreen: boolean;
   frontRam: boolean;
   rearRam: boolean;

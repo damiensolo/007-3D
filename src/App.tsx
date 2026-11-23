@@ -48,6 +48,7 @@ export function App() {
     gearButtonPressed: false,
     plateIndex: 0,
     oilSlick: false,
+    caltrops: false,
     smokeScreen: false,
     frontRam: false,
     rearRam: false,
@@ -832,6 +833,7 @@ export function App() {
                 ['bulletShield', 'Shield'],
                 ['smokeScreen', 'Smoke'],
                 ['oilSlick', 'Oil'],
+                ['caltrops', 'Nails'],
                 ['frontRam', 'F-Ram'],
                 ['rearRam', 'R-Ram'],
               ] as Array<[QBranchGadgetKey, string]>
