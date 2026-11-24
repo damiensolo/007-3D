@@ -356,6 +356,16 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
     const qMode = qBranchHighlight;
     const pickable: THREE.Mesh[] = [];
 
+    if (gadgetsRigRef.current) {
+      gadgetsRigRef.current.root.visible = vis.has('qbranch_gadgets');
+    }
+    if (cabinRigRef.current) {
+      cabinRigRef.current.root.visible = vis.has('qbranch_cockpit');
+    }
+    for (const gr of gunRigsRef.current) {
+      gr.root.visible = vis.has('qbranch_weapons');
+    }
+
     for (const part of parts) {
       const subsystemVisible = vis.has(part.subsystem);
       part.mesh.visible = subsystemVisible;
