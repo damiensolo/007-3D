@@ -56,6 +56,7 @@ export function App() {
     rearRam: false,
     wingGuns: false,
     roofHatch: false,
+    seatEjected: false,
     bulletShield: false,
   });
   const buttonTimerRef = useRef<number | null>(null);
@@ -133,32 +134,82 @@ export function App() {
     }
   }, []);
 
-  const triggerGearRedButton = useCallback(() => {
-    setQBranchState((prev) => {
-      if (!prev.gearCapOpen) {
-        return { ...prev, gearCapOpen: true };
-      }
-      if (buttonTimerRef.current !== null) {
-        window.clearTimeout(buttonTimerRef.current);
-      }
-      buttonTimerRef.current = window.setTimeout(() => {
-        setQBranchState((curr) => ({ ...curr, gearButtonPressed: false }));
-      }, 260);
+  const qBranchStateRef = useRef(qBranchState);
+  const gunDeployRef = useRef(gunDeploy);
+  const isFiringGunsRef = useRef(isFiringGuns);
+  qBranchStateRef.current = qBranchState;
+  gunDeployRef.current = gunDeploy;
+  isFiringGunsRef.current = isFiringGuns;
 
-      const nextEject = !prev.roofHatch;
-      return { ...prev, gearButtonPressed: true, roofHatch: nextEject };
+  const triggerGearRedButton = useCallback(() => {
+    const curr = qBranchStateRef.current;
+
+    // If the flip-top safety cap is still closed, flip it open first so the red button is exposed
+    if (!curr.gearCapOpen) {
+      setQBranchState((prev) => ({ ...prev, gearCapOpen: true }));
+      return;
+    }
+
+    if (buttonTimerRef.current !== null) {
+      window.clearTimeout(buttonTimerRef.current);
+    }
+    buttonTimerRef.current = window.setTimeout(() => {
+      setQBranchState((prev) => ({ ...prev, gearButtonPressed: false }));
+    }, 260);
+
+    // Authentic Goldfinger / Skyfall / Goldfinger Continuation behavior:
+    // 1) When the front-wing Browning machine guns are extended (deployed), pressing the red gear-knob button fires (or ceases firing) the guns!
+    // 2) When the front-wing machine guns are retracted, pressing that same red gear-knob button acts as the passenger ejector seat trigger!
+    const gunsExtended = curr.wingGuns || gunDeployRef.current >= 0.5;
+    if (gunsExtended) {
+      if (gunDeployRef.current < 0.85) {
+        setGunDeploy(1);
+      }
+      setIsFiringGuns((firing) => !firing);
+      setQBranchState((prev) => ({
+        ...prev,
+        gearCapOpen: true,
+        gearButtonPressed: true,
+        wingGuns: true,
+      }));
+      return;
+    }
+
+    // Guns are retracted -> Red button triggers (or resets) the passenger ejector seat
+    setQBranchState((prev) => {
+      const nextEject = !prev.seatEjected;
+      return {
+        ...prev,
+        gearCapOpen: true,
+        gearButtonPressed: true,
+        roofHatch: nextEject,
+        seatEjected: nextEject,
+      };
     });
   }, []);
 
   const toggleGadget = useCallback((key: QBranchGadgetKey) => {
-    setQBranchState((prev) => {
-      const nextVal = !prev[key];
-      if (key === 'wingGuns') {
-        setGunDeploy(nextVal ? 1 : 0);
-        if (!nextVal) setIsFiringGuns(false);
-      }
-      return { ...prev, [key]: nextVal };
-    });
+    if (key === 'wingGuns') {
+      const nextVal = !qBranchStateRef.current.wingGuns;
+      // Extending the Wing Guns deploys them out of the front indicator bays WITHOUT auto-firing;
+      // firing only happens when the user presses the red gearshift button!
+      setGunDeploy(nextVal ? 1 : 0);
+      setIsFiringGuns(false);
+      setQBranchState((prev) => ({ ...prev, wingGuns: nextVal }));
+      return;
+    }
+
+    if (key === 'roofHatch') {
+      const nextVal = !qBranchStateRef.current.roofHatch;
+      setQBranchState((prev) => ({
+        ...prev,
+        roofHatch: nextVal,
+        seatEjected: nextVal ? prev.seatEjected : false,
+      }));
+      return;
+    }
+
+    setQBranchState((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
   const cyclePlates = useCallback(() => {
@@ -170,10 +221,19 @@ export function App() {
 
   const handleToggleFireGuns = useCallback(() => {
     if (gunDeploy < 0.85) {
+      // First deploy the wing guns (they do not fire automatically on deployment)
       setGunDeploy(1);
-      setIsFiringGuns(true);
-      setQBranchState((prev) => ({ ...prev, wingGuns: true }));
+      setIsFiringGuns(false);
+      setQBranchState((prev) => ({ ...prev, wingGuns: true, gearCapOpen: true }));
     } else {
+      // Once extended, fire/stop via the red gear-knob trigger
+      if (buttonTimerRef.current !== null) {
+        window.clearTimeout(buttonTimerRef.current);
+      }
+      buttonTimerRef.current = window.setTimeout(() => {
+        setQBranchState((curr) => ({ ...curr, gearButtonPressed: false }));
+      }, 260);
+      setQBranchState((prev) => ({ ...prev, gearCapOpen: true, gearButtonPressed: true }));
       setIsFiringGuns((prev) => !prev);
     }
   }, [gunDeploy]);
@@ -192,6 +252,7 @@ export function App() {
       rearRam: false,
       wingGuns: false,
       roofHatch: false,
+      seatEjected: false,
       bulletShield: false,
     }));
   }, []);
@@ -249,6 +310,8 @@ export function App() {
         armrestOpen: false,
         gearCapOpen: false,
         wingGuns: false,
+        roofHatch: false,
+        seatEjected: false,
       }));
     }
     if (preset.cameraPosition) {
@@ -796,6 +859,7 @@ export function App() {
               onChange={(e) => {
                 const v = parseFloat(e.target.value);
                 setGunDeploy(v);
+                setQBranchState((prev) => ({ ...prev, wingGuns: v >= 0.5 }));
                 if (v < 0.85) setIsFiringGuns(false);
               }}
               className="flex-1 accent-orange-500 cursor-pointer h-1.5 bg-zinc-800 rounded-lg"
@@ -805,23 +869,19 @@ export function App() {
             </span>
             <div className="w-px h-4 bg-zinc-800" />
             <button
-              onClick={() => {
-                if (gunDeploy < 0.85) {
-                  setGunDeploy(1);
-                  setIsFiringGuns(true);
-                  setQBranchState((prev) => ({ ...prev, wingGuns: true }));
-                } else {
-                  setIsFiringGuns((prev) => !prev);
-                }
-              }}
-              title="Toggle simulated Browning .30-caliber firing & muzzle flash"
+              onClick={handleToggleFireGuns}
+              title={
+                gunDeploy < 0.85
+                  ? 'Extend twin front-wing Browning .30-caliber machine guns'
+                  : 'Press the red gear-knob button to fire/stop the deployed wing guns'
+              }
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition cursor-pointer shrink-0 ${isFiringGuns
                   ? 'bg-orange-500 text-zinc-950 border-orange-400 shadow-sm shadow-orange-500/30'
                   : 'bg-zinc-900 text-orange-300 border-orange-500/30 hover:bg-orange-500/15'
                 }`}
             >
               <Flame className="w-3.5 h-3.5" />
-              <span>{isFiringGuns ? 'Firing' : 'Fire'}</span>
+              <span>{gunDeploy < 0.85 ? 'Deploy' : isFiringGuns ? 'Firing' : 'Fire'}</span>
             </button>
           </div>
 
@@ -840,13 +900,28 @@ export function App() {
 
             <button
               onClick={triggerGearRedButton}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition cursor-pointer ${qBranchState.roofHatch
-                  ? 'bg-red-600 text-white border-red-400 shadow-sm shadow-red-500/40'
-                  : 'bg-red-950/60 text-red-300 border-red-500/40 hover:bg-red-900/60'
-                }`}
-              title="Press red gear-knob ejector button to jettison roof section and launch passenger seat"
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition cursor-pointer ${
+                (qBranchState.wingGuns || gunDeploy >= 0.5)
+                  ? isFiringGuns
+                    ? 'bg-orange-500 text-zinc-950 border-orange-400 shadow-sm shadow-orange-500/40'
+                    : 'bg-orange-950/60 text-orange-300 border-orange-500/40 hover:bg-orange-900/60'
+                  : qBranchState.seatEjected
+                    ? 'bg-red-600 text-white border-red-400 shadow-sm shadow-red-500/40'
+                    : 'bg-red-950/60 text-red-300 border-red-500/40 hover:bg-red-900/60'
+              }`}
+              title="Red Gear-Knob Button: Fires/stops the Wing Guns when guns are extended, or triggers the Passenger Ejector Seat when guns are retracted"
             >
-              {qBranchState.roofHatch ? 'Reset Ejector' : qBranchState.gearCapOpen ? 'Eject Seat' : 'Arm Ejector'}
+              {!qBranchState.gearCapOpen
+                ? (qBranchState.wingGuns || gunDeploy >= 0.5)
+                  ? 'Flip Cap (Guns)'
+                  : 'Flip Cap (Eject)'
+                : (qBranchState.wingGuns || gunDeploy >= 0.5)
+                  ? isFiringGuns
+                    ? 'Cease Fire (Red Btn)'
+                    : 'Fire Guns (Red Btn)'
+                  : qBranchState.seatEjected
+                    ? 'Reset Ejector'
+                    : 'Eject Seat (Red Btn)'}
             </button>
 
             <button
@@ -905,7 +980,6 @@ export function App() {
         qBranchState={qBranchState}
         isFiringGuns={isFiringGuns}
         onCabinAction={handleCabinAction}
-        onToggleFireGuns={handleToggleFireGuns}
         onResetAllGadgets={handleResetAllGadgets}
       />
     </div>

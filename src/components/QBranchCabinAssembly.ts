@@ -23,6 +23,7 @@ export interface QBranchGadgetStates {
   rearRam: boolean;
   wingGuns: boolean;
   roofHatch: boolean;
+  seatEjected: boolean;
   bulletShield: boolean;
 }
 
@@ -318,50 +319,58 @@ function createSwitchDeckLabelsTexture(): THREE.CanvasTexture {
     ctx.stroke();
   }
 
-  const drawPlaque = (cx: number, cy: number, text: string, accent = '#e2e8f0') => {
-    const w = Math.max(106, text.length * 16 + 24);
-    const h = 28;
-    ctx.fillStyle = 'rgba(9, 11, 15, 0.88)';
-    ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
+  // Map world switch coordinates (x in [-0.062..+0.062], z in [+0.134..-0.134]) to canvas (512x1024)
+  // PlaneGeometry rotated by -Math.PI/2 around X:
+  //   local +X (u=1, canvas x=512) -> world +X
+  //   local +Y (v=1, canvas y=0)   -> world -Z
+  //   local -Y (v=0, canvas y=1024)-> world +Z
+  // Furthermore, when viewed from +Y with camera.up = (0,0,+1), world +X is on screen-LEFT and world -X is on screen-RIGHT,
+  // so we draw the text mirrored horizontally around each plaque center so that when repeat.x = -1 is applied (or we map wx directly),
+  // every plaque sits at the exact (wx, wz) switch position and reads left-to-right!
+  const toCanvasX = (wx: number) => 256 + (wx / 0.124) * 512;
+  const toCanvasY = (wz: number) => 512 + (wz / 0.268) * 1024;
+
+  const drawMirroredPlaque = (wx: number, wz: number, text: string, accent = '#e2e8f0') => {
+    const cx = toCanvasX(wx);
+    const cy = toCanvasY(wz);
+    const w = Math.max(96, text.length * 14 + 20);
+    const h = 24;
+    ctx.save();
+    ctx.translate(cx, cy);
+    // Flip local X so when viewed from +Y with camera.up=(0,0,+1) (where +X is left and -X is right), text reads left-to-right!
+    ctx.scale(-1, -1);
+    ctx.fillStyle = 'rgba(9, 11, 15, 0.90)';
+    ctx.fillRect(-w / 2, -h / 2, w, h);
     ctx.strokeStyle = 'rgba(203, 213, 225, 0.45)';
     ctx.lineWidth = 2;
-    ctx.strokeRect(cx - w / 2, cy - h / 2, w, h);
+    ctx.strokeRect(-w / 2, -h / 2, w, h);
 
     ctx.fillStyle = accent;
-    ctx.font = 'bold 17px "Arial Narrow", "Helvetica", sans-serif';
+    ctx.font = 'bold 15px "Arial Narrow", "Helvetica", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, cx, cy + 1);
+    ctx.fillText(text, 0, 1);
+    ctx.restore();
   };
 
-  // Map world switch coordinates (x in [-0.062..+0.062], z in [+0.134..-0.134]) to canvas (512x1024)
-  // Note: PlaneGeometry rotated -PI/2 around X maps u: -X -> +X (left to right) and v: +Z (top) -> -Z (bottom)
-  // In top-down view looking from +Y with +Z at top: left column is +X (x=+0.028 -> u=142) or -X depending on camera up.
-  // With PlaneGeometry rotation.x = -Math.PI/2, local +X is world +X, local +Y is world -Z (so v=1 is -Z, v=0 is +Z).
-  // Wait: in Three.js PlaneGeometry, local +Y has v=1 (top of canvas: y=0) and local -Y has v=0 (bottom of canvas: y=1024).
-  // When rotated by -Math.PI/2 around X: local +Y points to world +Z! So canvas top (y=0) is world +Z, canvas bottom (y=1024) is world -Z,
-  // canvas left (x=0) is world -X, and canvas right (x=512) is world +X!
-  const toCanvasX = (wx: number) => 256 + (wx / 0.124) * 512;
-  const toCanvasY = (wz: number) => 512 - (wz / 0.268) * 1024;
+  // Row 1 (z = +0.098, LED at +0.1145): place plaque just below toggle at z = +0.075
+  drawMirroredPlaque(0.028, 0.075, 'OIL SLICK', '#fde047');
+  drawMirroredPlaque(-0.028, 0.075, 'SMOKE', '#cbd5e1');
 
-  // Row 1 (z = +0.098): Rear Smoke (-0.028) & Oil Slick (+0.028)
-  drawPlaque(toCanvasX(-0.028), toCanvasY(0.072), 'SMOKE', '#cbd5e1');
-  drawPlaque(toCanvasX(0.028), toCanvasY(0.072), 'OIL SLICK', '#fde047');
+  // Row 2 (z = +0.052, LED at +0.0685): place plaque just below toggle at z = +0.028
+  drawMirroredPlaque(0.028, 0.028, 'FRONT RAM', '#fca5a5');
+  drawMirroredPlaque(-0.028, 0.028, 'REAR RAM', '#fca5a5');
 
-  // Row 2 (z = +0.052): Rear Ram (-0.028) & Front Ram (+0.028)
-  drawPlaque(toCanvasX(-0.028), toCanvasY(0.026), 'REAR RAM', '#fca5a5');
-  drawPlaque(toCanvasX(0.028), toCanvasY(0.026), 'FRONT RAM', '#fca5a5');
+  // Row 3 (z = -0.008, rocker housing z in [-0.034, +0.018]): place plaque just below rocker at z = -0.039
+  drawMirroredPlaque(0.028, -0.039, 'WING GUNS', '#fdba74');
+  drawMirroredPlaque(-0.028, -0.039, 'ROOF HATCH', '#7dd3fc');
 
-  // Row 3 (z = -0.012): Roof Hatch (-0.028) & Wing Guns (+0.028)
-  drawPlaque(toCanvasX(-0.028), toCanvasY(-0.044), 'ROOF HATCH', '#7dd3fc');
-  drawPlaque(toCanvasX(0.028), toCanvasY(-0.044), 'WING GUNS', '#fdba74');
+  // Row 4 Right (-X = -0.028): Caltrops toggle at z = -0.052 (place plaque at z = -0.070) & Bullet Shield rocker at z = -0.095 (place plaque at z = -0.125)
+  drawMirroredPlaque(-0.028, -0.070, 'NAILS', '#6ee7b7');
+  drawMirroredPlaque(-0.028, -0.125, 'SHIELD', '#d8b4fe');
 
-  // Row 4 Center/Left: Caltrops / Nails (-0.028, z = -0.055) & Bullet Shield (-0.028, z = -0.094)
-  drawPlaque(toCanvasX(-0.028), toCanvasY(-0.068), 'NAILS', '#6ee7b7');
-  drawPlaque(toCanvasX(-0.028), toCanvasY(-0.124), 'SHIELD', '#d8b4fe');
-
-  // Row 4 Right: Revolving Plates E-Gate (+0.028, z = -0.088)
-  drawPlaque(toCanvasX(0.028), toCanvasY(-0.126), 'PLATES 1·2·3', '#fcd34d');
+  // Row 4 Left (+X = +0.028): Revolving Plates E-Gate at z = -0.088 (place plaque at z = -0.128)
+  drawMirroredPlaque(0.028, -0.128, 'PLATES 1·2·3', '#fcd34d');
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -564,9 +573,9 @@ export function createQBranchCabinRig(
 
   const gearRedButton = register(
     new THREE.Mesh(new THREE.CylinderGeometry(0.0076, 0.0080, 0.011, 24), redButtonMat),
-    'Red Ejector Seat Actuator Button',
+    'Red Gear-Knob Master Trigger (Guns / Ejector)',
     'Polished Red Acrylic / Microswitch',
-    'Spring-loaded Q-Branch ejector trigger: press to jettison the passenger roof section and launch the passenger ejector seat ("I never joke about my work, 007").',
+    'Dual-mode Goldfinger / Skyfall / Continuation actuator: fires the twin front-wing Browning machine guns when the guns are extended, or triggers the passenger ejector seat when the guns are retracted.',
     [0, 1.08, 0.2],
     { type: 'pressGearButton' }
   );

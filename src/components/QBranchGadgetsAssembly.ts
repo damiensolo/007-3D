@@ -108,6 +108,18 @@ export interface QBranchGadgetsRig {
   hatchTimer: number;
   hatchOpen: number;
   seatEjectProgress: number;
+  seatPhase: 'stowed' | 'rails' | 'airborne' | 'skid' | 'settled';
+  seatPos: THREE.Vector3;
+  seatVel: THREE.Vector3;
+  seatRot: THREE.Euler;
+  seatAngVel: THREE.Vector3;
+  seatBounces: number;
+  roofPos: THREE.Vector3;
+  roofVel: THREE.Vector3;
+  roofRot: THREE.Euler;
+  roofAngVel: THREE.Vector3;
+  roofBounces: number;
+  roofSettled: boolean;
   oilLidOpen: number;
   caltropLidOpen: number;
   smokePoints: THREE.Points;
@@ -1793,6 +1805,18 @@ export function createQBranchGadgetsRig(
     hatchTimer: 0,
     hatchOpen: 0,
     seatEjectProgress: 0,
+    seatPhase: 'stowed',
+    seatPos: passengerSeatBasePos.clone(),
+    seatVel: new THREE.Vector3(),
+    seatRot: new THREE.Euler(),
+    seatAngVel: new THREE.Vector3(),
+    seatBounces: 0,
+    roofPos: roofHatchBasePos.clone(),
+    roofVel: new THREE.Vector3(),
+    roofRot: new THREE.Euler(),
+    roofAngVel: new THREE.Vector3(),
+    roofBounces: 0,
+    roofSettled: false,
     oilLidOpen: 0,
     caltropLidOpen: 0,
     smokePoints,
@@ -1847,47 +1871,136 @@ export function updateQBranchGadgetsRig(
   rig.bulletShieldGroup.position.y = -0.326 + rig.shieldExtend * 0.326;
 
   // 4. Two-Stage Jet-Cockpit Compressed-Air Ejection Sequence
-  // Stage 1 (0.00s -> 0.36s): Pneumatic bolts shear and blast the flush roof panel upward and rearward out of the slipstream
-  // Stage 2 (0.14s -> 0.52s): White-blue compressed-air vapour burst fires from the twin floor cylinders as the seat rockets skyward (+1.18m Y, -0.22m Z)
-  const triggerEjectBurst = state.roofHatch && !rig.hatchActivePrev;
+  // Triggered ONLY when Ejector Switch is armed AND Red Gear-Knob Button is pressed (state.seatEjected)
+  // Stage 1 (0.00s ->): Pneumatic bolts shear and blast the flush roof panel upward & rearward to the tarmac
+  // Stage 2 (0.07s -> 0.19s): Seat accelerates up the vertical guide rails through the roof opening with compressed-air burst
+  // Stage 3 (0.19s ->): Free ballistic flight under gravity (g = 9.81 m/s²), clearing the car and impacting/bouncing/skidding on the ground
+  const triggerEjectBurst = state.seatEjected && !rig.hatchActivePrev;
   if (triggerEjectBurst) {
     rig.hatchTimer = 0;
+    rig.seatPhase = 'rails';
+    rig.seatPos.copy(rig.passengerSeatBasePos);
+    rig.seatVel.set(0, 0, 0);
+    rig.seatRot.set(0, 0, 0);
+    rig.seatAngVel.set(0, 0, 0);
+    rig.seatBounces = 0;
+    rig.roofPos.copy(rig.roofHatchBasePos);
+    rig.roofVel.set(0.75, 5.8, -3.2);
+    rig.roofRot.set(0, 0, 0);
+    rig.roofAngVel.set(-4.8, 1.2, -2.5);
+    rig.roofBounces = 0;
+    rig.roofSettled = false;
   }
-  rig.hatchActivePrev = state.roofHatch;
+  rig.hatchActivePrev = state.seatEjected;
 
   let airBurstBudget = 0;
-  if (state.roofHatch) {
-    rig.hatchTimer = Math.min(3.0, rig.hatchTimer + safeDt);
-    const tPanel = THREE.MathUtils.clamp(rig.hatchTimer / 0.36, 0, 1);
-    // Stage 1 ballistic pop-off trajectory: blasts up and tumbles rearward clear of the roof opening
+  if (state.seatEjected) {
+    rig.hatchTimer += safeDt;
+    const tPanel = THREE.MathUtils.clamp(rig.hatchTimer / 0.25, 0, 1);
     rig.hatchOpen = tPanel;
     const showCutoutTrim = tPanel > 0.015;
     rig.outerBevelMesh.visible = showCutoutTrim;
     rig.panelSkirtMesh.visible = showCutoutTrim;
     rig.roofSealMesh.visible = showCutoutTrim;
     rig.innerFlangeMesh.visible = showCutoutTrim;
-    const arcY = 2.65 * tPanel - 0.65 * tPanel * tPanel;
-    const driftZ = -2.45 * tPanel * tPanel;
-    const driftX = 0.38 * tPanel;
-    rig.roofHatchGroup.position.set(
-      rig.roofHatchBasePos.x + driftX,
-      rig.roofHatchBasePos.y + arcY,
-      rig.roofHatchBasePos.z + driftZ
-    );
-    rig.roofHatchGroup.rotation.set(-tPanel * 2.1, tPanel * 0.45, -tPanel * 0.75);
-    rig.roofHatchGroup.visible = tPanel < 0.98;
 
-    // Stage 2 (0.07s -> 0.44s): Compressed-air launch rockets the bucket seat skyward & slightly rearward along the backrest angle
-    // Pneumatic cylinder valves blow at t = 0.04s right as roof panel shears off, building pressure that drives the seat up at t = 0.07s
-    const tSeatRaw = THREE.MathUtils.clamp((rig.hatchTimer - 0.07) / 0.37, 0, 1);
-    const seatEase = 1 - Math.pow(1 - tSeatRaw, 3);
-    rig.seatEjectProgress = seatEase;
-    rig.passengerSeatGroup.position.set(
-      rig.passengerSeatBasePos.x - 0.04 * seatEase,
-      rig.passengerSeatBasePos.y + 1.18 * seatEase,
-      rig.passengerSeatBasePos.z - 0.22 * seatEase
-    );
-    rig.passengerSeatGroup.rotation.set(-0.16 * seatEase, 0, 0);
+    // Stage 1: Ballistic roof panel flight & ground impact
+    if (!rig.roofSettled) {
+      if (rig.roofPos.y > 0.036 || rig.roofVel.y > 0) {
+        rig.roofVel.y -= 9.81 * safeDt;
+        rig.roofPos.addScaledVector(rig.roofVel, safeDt);
+        rig.roofRot.x += rig.roofAngVel.x * safeDt;
+        rig.roofRot.y += rig.roofAngVel.y * safeDt;
+        rig.roofRot.z += rig.roofAngVel.z * safeDt;
+
+        if (rig.roofPos.y <= 0.035) {
+          rig.roofPos.y = 0.035;
+          rig.roofBounces++;
+          if (Math.abs(rig.roofVel.y) > 0.7 && rig.roofBounces <= 2) {
+            rig.roofVel.y = Math.abs(rig.roofVel.y) * 0.28;
+            rig.roofVel.x *= 0.55;
+            rig.roofVel.z *= 0.55;
+            rig.roofAngVel.multiplyScalar(0.42);
+          } else {
+            rig.roofVel.y = 0;
+          }
+        }
+      } else {
+        rig.roofPos.y = 0.035;
+        const skid = Math.exp(-6.0 * safeDt);
+        rig.roofVel.x *= skid;
+        rig.roofVel.z *= skid;
+        rig.roofPos.x += rig.roofVel.x * safeDt;
+        rig.roofPos.z += rig.roofVel.z * safeDt;
+        const flatX = Math.round(rig.roofRot.x / Math.PI) * Math.PI;
+        rig.roofRot.x += (flatX - rig.roofRot.x) * Math.min(1, safeDt * 12);
+        rig.roofRot.z += (0 - rig.roofRot.z) * Math.min(1, safeDt * 12);
+        if (rig.roofVel.x * rig.roofVel.x + rig.roofVel.z * rig.roofVel.z < 0.002) {
+          rig.roofSettled = true;
+        }
+      }
+    }
+    rig.roofHatchGroup.visible = true;
+    rig.roofHatchGroup.position.copy(rig.roofPos);
+    rig.roofHatchGroup.rotation.copy(rig.roofRot);
+
+    // Stage 2 & 3: Seat rail launch -> free ballistic flight -> tarmac impact & bounce
+    if (rig.seatPhase === 'rails') {
+      const tRailRaw = THREE.MathUtils.clamp((rig.hatchTimer - 0.07) / 0.12, 0, 1);
+      const railEase = tRailRaw * tRailRaw * (2 - tRailRaw);
+      rig.seatEjectProgress = railEase;
+      rig.seatPos.set(
+        rig.passengerSeatBasePos.x - 0.02 * railEase,
+        rig.passengerSeatBasePos.y + 1.05 * railEase,
+        rig.passengerSeatBasePos.z - 0.18 * railEase
+      );
+      rig.seatRot.set(-0.14 * railEase, 0, 0);
+      if (rig.hatchTimer >= 0.19) {
+        rig.seatPhase = 'airborne';
+        rig.seatVel.set(1.95, 7.2, -1.35);
+        rig.seatAngVel.set(-2.4, 0.85, -1.75);
+      }
+    } else if (rig.seatPhase === 'airborne') {
+      rig.seatEjectProgress = 1;
+      rig.seatVel.y -= 9.81 * safeDt;
+      rig.seatPos.addScaledVector(rig.seatVel, safeDt);
+      rig.seatRot.x += rig.seatAngVel.x * safeDt;
+      rig.seatRot.y += rig.seatAngVel.y * safeDt;
+      rig.seatRot.z += rig.seatAngVel.z * safeDt;
+
+      const seatGroundY = 0.25;
+      if (rig.seatPos.y <= seatGroundY) {
+        rig.seatPos.y = seatGroundY;
+        rig.seatBounces++;
+        if (Math.abs(rig.seatVel.y) > 0.75 && rig.seatBounces <= 3) {
+          const restitution = Math.max(0.16, 0.28 - rig.seatBounces * 0.04);
+          rig.seatVel.y = Math.abs(rig.seatVel.y) * restitution;
+          rig.seatVel.x *= 0.56;
+          rig.seatVel.z *= 0.56;
+          rig.seatAngVel.multiplyScalar(0.45);
+        } else {
+          rig.seatVel.y = 0;
+          rig.seatPhase = 'skid';
+        }
+      }
+    } else if (rig.seatPhase === 'skid') {
+      rig.seatPos.y = 0.25;
+      const skid = Math.exp(-5.5 * safeDt);
+      rig.seatVel.x *= skid;
+      rig.seatVel.z *= skid;
+      rig.seatPos.x += rig.seatVel.x * safeDt;
+      rig.seatPos.z += rig.seatVel.z * safeDt;
+      const settleLerp = Math.min(1, safeDt * 10);
+      const targetRestX = Math.round(rig.seatRot.x / (Math.PI * 0.5)) * (Math.PI * 0.5);
+      rig.seatRot.x += (targetRestX - rig.seatRot.x) * settleLerp;
+      rig.seatRot.z += (0 - rig.seatRot.z) * settleLerp;
+      if (rig.seatVel.x * rig.seatVel.x + rig.seatVel.z * rig.seatVel.z < 0.002) {
+        rig.seatPhase = 'settled';
+      }
+    }
+
+    rig.passengerSeatGroup.position.copy(rig.seatPos);
+    rig.passengerSeatGroup.rotation.copy(rig.seatRot);
 
     if (rig.hatchTimer >= 0.04 && rig.hatchTimer <= 0.20) {
       airBurstBudget = 16; // Immediate high-pressure valve release flash right as launch begins
@@ -1897,26 +2010,30 @@ export function updateQBranchGadgetsRig(
   } else {
     // Smoothly retract seat and reseat roof panel 100% flush & seamless when reset
     rig.hatchTimer = 0;
-    rig.hatchOpen += (0 - rig.hatchOpen) * Math.min(1, safeDt * 7.5);
+    rig.seatPhase = 'stowed';
+    const resetLerp = Math.min(1, safeDt * 7.5);
+    rig.hatchOpen += (0 - rig.hatchOpen) * resetLerp;
     const showCutoutTrim = rig.hatchOpen > 0.015;
     rig.outerBevelMesh.visible = showCutoutTrim;
     rig.panelSkirtMesh.visible = showCutoutTrim;
     rig.roofSealMesh.visible = showCutoutTrim;
     rig.innerFlangeMesh.visible = showCutoutTrim;
-    rig.seatEjectProgress += (0 - rig.seatEjectProgress) * Math.min(1, safeDt * 7.5);
+    rig.seatEjectProgress += (0 - rig.seatEjectProgress) * resetLerp;
+
+    rig.roofPos.lerp(rig.roofHatchBasePos, resetLerp);
+    rig.roofRot.x += (0 - rig.roofRot.x) * resetLerp;
+    rig.roofRot.y += (0 - rig.roofRot.y) * resetLerp;
+    rig.roofRot.z += (0 - rig.roofRot.z) * resetLerp;
     rig.roofHatchGroup.visible = true;
-    rig.roofHatchGroup.position.set(
-      rig.roofHatchBasePos.x + 0.38 * rig.hatchOpen,
-      rig.roofHatchBasePos.y + 2.00 * rig.hatchOpen,
-      rig.roofHatchBasePos.z - 1.80 * rig.hatchOpen
-    );
-    rig.roofHatchGroup.rotation.set(-rig.hatchOpen * 1.4, rig.hatchOpen * 0.3, -rig.hatchOpen * 0.5);
-    rig.passengerSeatGroup.position.set(
-      rig.passengerSeatBasePos.x - 0.04 * rig.seatEjectProgress,
-      rig.passengerSeatBasePos.y + 1.18 * rig.seatEjectProgress,
-      rig.passengerSeatBasePos.z - 0.22 * rig.seatEjectProgress
-    );
-    rig.passengerSeatGroup.rotation.set(-0.16 * rig.seatEjectProgress, 0, 0);
+    rig.roofHatchGroup.position.copy(rig.roofPos);
+    rig.roofHatchGroup.rotation.copy(rig.roofRot);
+
+    rig.seatPos.lerp(rig.passengerSeatBasePos, resetLerp);
+    rig.seatRot.x += (0 - rig.seatRot.x) * resetLerp;
+    rig.seatRot.y += (0 - rig.seatRot.y) * resetLerp;
+    rig.seatRot.z += (0 - rig.seatRot.z) * resetLerp;
+    rig.passengerSeatGroup.position.copy(rig.seatPos);
+    rig.passengerSeatGroup.rotation.copy(rig.seatRot);
   }
 
   // Update compressed-air vapour burst particles from the twin floor cylinders

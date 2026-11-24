@@ -20,7 +20,6 @@ interface QBranchMiniControllerProps {
   qBranchState: QBranchGadgetStates;
   isFiringGuns: boolean;
   onCabinAction: (action: NonNullable<CabinSubPart['action']>) => void;
-  onToggleFireGuns: () => void;
   onResetAllGadgets: () => void;
 }
 
@@ -30,13 +29,14 @@ export const QBranchMiniController: React.FC<QBranchMiniControllerProps> = ({
   qBranchState,
   isFiringGuns,
   onCabinAction,
-  onToggleFireGuns,
   onResetAllGadgets,
 }) => {
   const canvasHostRef = useRef<HTMLDivElement>(null);
   const qBranchStateRef = useRef(qBranchState);
   const onCabinActionRef = useRef(onCabinAction);
+  const isFiringGunsRef = useRef(isFiringGuns);
   qBranchStateRef.current = qBranchState;
+  isFiringGunsRef.current = isFiringGuns;
   onCabinActionRef.current = onCabinAction;
 
   const [collapsed, setCollapsed] = useState(false);
@@ -62,12 +62,23 @@ export const QBranchMiniController: React.FC<QBranchMiniControllerProps> = ({
       };
     }
     if (action.type === 'pressGearButton') {
+      if (state.wingGuns) {
+        return {
+          label: 'Red Trigger · Wing Guns Fire',
+          status: isFiringGunsRef.current
+            ? 'FIRING · PRESS TO CEASE FIRE'
+            : state.gearCapOpen
+              ? 'GUNS EXTENDED · PRESS TO FIRE'
+              : 'CAP CLOSED · CLICK TO FLIP CAP',
+          accent: '#fb923c',
+        };
+      }
       return {
-        label: 'Passenger Ejector Seat Trigger',
-        status: state.roofHatch
-          ? 'EJECTED · CLICK TO RESET'
+        label: 'Red Trigger · Passenger Ejector Seat',
+        status: state.seatEjected
+          ? 'EJECTED · PRESS TO RESET'
           : state.gearCapOpen
-            ? 'ARMED · PRESS TO EJECT'
+            ? 'GUNS RETRACTED · PRESS TO EJECT SEAT'
             : 'CAP CLOSED · CLICK TO FLIP CAP',
         accent: '#ef4444',
       };
@@ -95,10 +106,17 @@ export const QBranchMiniController: React.FC<QBranchMiniControllerProps> = ({
       rearRam: { name: 'Rear Hydraulic Battering Rams', color: '#f87171' },
       caltrops: { name: 'Right Taillight Tire Nails', color: '#34d399' },
       wingGuns: { name: 'Twin Browning .30 Wing Guns', color: '#fb923c' },
-      roofHatch: { name: 'Passenger Ejector Roof Hatch', color: '#38bdf8' },
+      roofHatch: { name: 'Passenger Ejector Arming Switch', color: '#38bdf8' },
       bulletShield: { name: 'Rear Bullet-Resistant Shield', color: '#c084fc' },
     };
     const info = meta[key] ?? { name: key, color: '#fbbf24' };
+    if (key === 'roofHatch') {
+      return {
+        label: info.name,
+        status: active ? 'ARMED · PRESS RED BTN TO EJECT' : 'SAFE · CLICK TO ARM',
+        accent: info.color,
+      };
+    }
     return {
       label: info.name,
       status: active ? 'ACTIVE · CLICK TO STOW' : 'STOWED · CLICK TO DEPLOY',
@@ -111,15 +129,15 @@ export const QBranchMiniController: React.FC<QBranchMiniControllerProps> = ({
     const container = canvasHostRef.current;
     if (!container) return;
 
-    const width = container.clientWidth || 216;
-    const height = container.clientHeight || 348;
+    const width = container.clientWidth || 228;
+    const height = container.clientHeight || 440;
 
     const scene = new THREE.Scene();
 
-    // Narrow-FOV telephoto perspective camera eliminates edge distortion while keeping rich 3D depth
-    const camera = new THREE.PerspectiveCamera(26, width / height, 0.05, 5);
-    const baseCamPos = new THREE.Vector3(0.0, 0.72, -0.11);
-    const camTarget = new THREE.Vector3(0.0, 0.055, 0.012);
+    // Narrow-FOV telephoto perspective camera framed so both the top gear-knob and the bottom armrest wall sit inside the canvas with generous margin
+    const camera = new THREE.PerspectiveCamera(27.5, width / height, 0.05, 5);
+    const baseCamPos = new THREE.Vector3(0.0, 0.86, -0.10);
+    const camTarget = new THREE.Vector3(0.0, 0.055, 0.008);
     camera.position.copy(baseCamPos);
     camera.up.set(0, 0, 1); // +Z (front of car / gear knob) points to the TOP of the mini window!
     camera.lookAt(camTarget);
@@ -161,33 +179,25 @@ export const QBranchMiniController: React.FC<QBranchMiniControllerProps> = ({
     scene.add(tiltGroup);
 
     // Build the authentic 3D Q-Branch Cockpit Rig:
-    // - Armrest console centered at (0, 0, -0.028)
-    // - Flip-Top Ejector Gear-Knob docked at the top crown (0, -0.105, +0.156) with 1.35x scale so the red button is prominent and easy to click
+    // - Armrest console shifted UP to (0, 0, -0.020) (occupies z in [-0.165, +0.125]) so the bottom E-Gate & Shield rocker sit well above the footer buttons
+    // - Flip-Top Ejector Gear-Knob positioned at (0, -0.105, +0.215) so it sits cleanly above the top of the armrest with zero overlap
     const cabinRig: QBranchCabinRig = createQBranchCabinRig(
-      new THREE.Vector3(0, -0.105, 0.156),
-      new THREE.Vector3(0, 0, -0.028),
-      1.35
+      new THREE.Vector3(0, -0.105, 0.215),
+      new THREE.Vector3(0, 0, -0.020),
+      1.18
     );
+    // Hide the wide square carpet tunnel surround & lower boot in the mini controller so only the sculpted upper gaiter, chrome shaft, and flip-top knob crown appear cleanly above the armrest
+    if (cabinRig.gearGroup.children[0]) {
+      cabinRig.gearGroup.children[0].visible = false;
+    }
+    if (cabinRig.gearGroup.children[1]) {
+      cabinRig.gearGroup.children[1].scale.set(0.58, 0.82, 0.58);
+      cabinRig.gearGroup.children[1].position.y = 0.022;
+    }
     // Tilt the gearstick slightly toward the camera so both the 5-speed flip cap and red ejector button face the viewer
-    cabinRig.gearGroup.rotation.x = -0.38;
+    cabinRig.gearGroup.rotation.x = -0.32;
 
-    // Mirror X scale (-1) or rotate camera? Note: because camera looks from +Y down toward -Y with up = (0, 0, +1),
-    // screen-right is Cross(forward=(0,-1,0), up=(0,0,1)) = (-1, 0, 0), meaning world +X is on the LEFT of the screen
-    // and world -X is on the RIGHT of the screen! That matches the exact Goldfinger armrest layout in your screenshot
-    // (E-Gate at +X on the bottom-left, Bullet Shield at -X on the bottom-right!).
     tiltGroup.add(cabinRig.root);
-
-    // Fix the deck label texture horizontal mirror when viewed with camera.up = (0,0,1)
-    cabinRig.armrestGroup.traverse((child) => {
-      if (child instanceof THREE.Mesh && child.geometry instanceof THREE.PlaneGeometry) {
-        const mat = child.material as THREE.MeshStandardMaterial;
-        if (mat.map && mat.transparent) {
-          mat.map.repeat.x = -1;
-          mat.map.offset.x = 1;
-          mat.map.needsUpdate = true;
-        }
-      }
-    });
 
     // Collect interactive meshes for 3D raycast hover & click
     const interactiveMeshes: THREE.Mesh[] = [];
@@ -434,35 +444,67 @@ export const QBranchMiniController: React.FC<QBranchMiniControllerProps> = ({
         )}
       </div>
 
-      {/* Interactive 3D WebGL Canvas (Gear-Knob Ejector Crown + Center Armrest Switchboard) */}
-      <div className="relative w-full h-[340px] bg-gradient-to-b from-zinc-900/40 via-[#0b0d12] to-zinc-950">
-        {/* Top Ejector Gear-Knob Callout Badge */}
-        <div className="pointer-events-none absolute top-2 left-2.5 right-2.5 z-10 flex items-center justify-between text-[9px] font-mono uppercase tracking-wider text-zinc-400">
-          <span className="px-1.5 py-0.5 rounded bg-zinc-950/80 border border-zinc-800/80 text-red-300 flex items-center gap-1">
-            <ShieldAlert className="w-2.5 h-2.5 text-red-400" />
-            {qBranchState.gearCapOpen ? 'Press Red Button' : '1. Flip Gear Cap'}
-          </span>
-          <span className="px-1.5 py-0.5 rounded bg-zinc-950/80 border border-zinc-800/80 text-zinc-400">
-            3D Interactive
-          </span>
-        </div>
+      {/* Top Ejector / Wing-Gun Gear-Knob Callout Strip (dedicated header strip so it never overlaps the 3D gear knob) */}
+      <div className="px-3 py-1 bg-zinc-900/70 border-b border-zinc-800/70 flex items-center justify-between text-[9px] font-mono uppercase tracking-wider text-zinc-400">
+        <span
+          className={`flex items-center gap-1 font-semibold ${
+            qBranchState.wingGuns ? 'text-orange-300' : 'text-red-300'
+          }`}
+        >
+          <ShieldAlert
+            className={`w-2.5 h-2.5 ${
+              qBranchState.wingGuns ? 'text-orange-400' : 'text-red-400'
+            }`}
+          />
+          {!qBranchState.gearCapOpen
+            ? '1. Flip Gear Cap'
+            : qBranchState.wingGuns
+              ? isFiringGuns
+                ? 'Red Btn: Cease Fire'
+                : 'Red Btn: Fire Guns'
+              : 'Red Btn: Eject Seat'}
+        </span>
+        <span className="text-zinc-500">
+          {qBranchState.wingGuns ? 'Mode: Guns' : 'Mode: Ejector'}
+        </span>
+      </div>
 
+      {/* Interactive 3D WebGL Canvas (Gear-Knob Ejector Crown + Center Armrest Switchboard) */}
+      <div className="relative w-full h-[440px] bg-gradient-to-b from-zinc-900/40 via-[#0b0d12] to-zinc-950">
         <div ref={canvasHostRef} className="w-full h-full" />
       </div>
 
-      {/* Bottom Quick-Action Tactical Footer (Wing-Gun Fire Trigger & Master Stow) */}
+      {/* Bottom Quick-Action Tactical Footer (Master Trigger Info & Stow All) */}
       <div className="px-2.5 py-2 border-t border-zinc-800/80 bg-zinc-900/60 flex items-center justify-between gap-1.5">
         <button
-          onClick={onToggleFireGuns}
+          onClick={() => onCabinAction({ type: 'pressGearButton' })}
           className={`flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold border transition cursor-pointer ${
-            isFiringGuns
-              ? 'bg-orange-500 text-zinc-950 border-orange-400 shadow-sm shadow-orange-500/30'
-              : 'bg-zinc-900 text-orange-300 border-orange-500/30 hover:bg-orange-500/15'
+            qBranchState.wingGuns
+              ? isFiringGuns
+                ? 'bg-orange-500 text-zinc-950 border-orange-400 shadow-sm shadow-orange-500/30'
+                : 'bg-zinc-900 text-orange-300 border-orange-500/30 hover:bg-orange-500/15'
+              : qBranchState.seatEjected
+                ? 'bg-red-600 text-white border-red-400 shadow-sm shadow-red-500/30'
+                : 'bg-zinc-900 text-red-300 border-red-500/30 hover:bg-red-500/15'
           }`}
-          title="Deploy and fire twin front-wing Browning .30-caliber machine guns"
+          title={
+            qBranchState.wingGuns
+              ? 'Press the red gear-knob button to fire/stop the extended wing guns'
+              : 'Press the red gear-knob button to trigger the passenger ejector seat'
+          }
         >
           <Flame className="w-3.5 h-3.5" />
-          <span>{isFiringGuns ? 'Firing Guns' : 'Fire Guns'}</span>
+          <span>
+            {!qBranchState.gearCapOpen
+              ? 'Flip Gear Cap'
+              : qBranchState.wingGuns
+                ? isFiringGuns
+                  ? 'Cease Fire'
+                  : 'Red Btn: Fire'
+                : qBranchState.seatEjected
+                  ? 'Reset Ejector'
+                  : 'Red Btn: Eject'}
+          </span>
         </button>
 
         <button
