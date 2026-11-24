@@ -859,16 +859,23 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
         registerProceduralSubParts(cabinRig.root.name, 'qbranch_cockpit', cabinRig.subParts);
 
         // 3. Q-Branch Exterior Gadgets (sample exact SK_Trunk_101 contour, split articulated rear taillights,
-        //    and extract the jettisonable passenger roof panel + passenger ejector seat)
+        //    extract the jettisonable passenger roof panel + passenger ejector seat, and extract the rear wheel knock-off spinners)
         const trunkMeshes: THREE.Mesh[] = [];
         const rearLightMeshes: THREE.Mesh[] = [];
         const roofHatchSourceMeshes: THREE.Mesh[] = [];
         const passengerSeatSourceMeshes: THREE.Mesh[] = [];
+        const rearRimMeshes: THREE.Mesh[] = [];
         root.traverse((obj) => {
           if (!(obj instanceof THREE.Mesh)) return;
           const n = obj.name.toLowerCase();
           if (n.includes('sk_trunk_101')) trunkMeshes.push(obj);
           if (n.includes('sm_light_b_101')) rearLightMeshes.push(obj);
+          if (
+            (n.includes('ani_wheel_bl44') || n.includes('ani_disc_scale_br6')) &&
+            n.includes('rim1')
+          ) {
+            rearRimMeshes.push(obj);
+          }
           if (
             (n.includes('sm_roof_101') && (n.includes('013_db5') || n.includes('011_db5'))) ||
             (n.includes('sm_body_101') &&
@@ -1544,6 +1551,146 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
           geo.computeBoundingSphere();
         }
 
+        // Extract the original 3-eared Borrani knock-off spinners from the rear wire wheels (Ani_Wheel_BL44 & Ani_Disc_Scale_BR6)
+        // while leaving the inner splined wheel hub barrel (Comp 63/64) and all 72 wire spokes attached to the wheel!
+        const leftSpinnerPivotPos = new THREE.Vector3(0.8175, 0.3582, -1.0177);
+        const rightSpinnerPivotPos = new THREE.Vector3(-0.8177, 0.3585, -1.0181);
+        const leftSpinnerMeshes: THREE.Mesh[] = [];
+        const rightSpinnerMeshes: THREE.Mesh[] = [];
+
+        for (const rimMesh of rearRimMeshes) {
+          const geo = rimMesh.geometry;
+          const posAttr = geo.attributes.position;
+          const normAttr = geo.attributes.normal;
+          const uvAttr = geo.attributes.uv;
+          if (!posAttr) continue;
+
+          rimMesh.updateMatrixWorld(true);
+          const normalMat = new THREE.Matrix3().getNormalMatrix(rimMesh.matrixWorld);
+          const vCount = posAttr.count;
+          const worldPts: THREE.Vector3[] = new Array(vCount);
+          const weldMap = new Map<string, number[]>();
+          for (let vi = 0; vi < vCount; vi++) {
+            const p = new THREE.Vector3().fromBufferAttribute(posAttr, vi).applyMatrix4(rimMesh.matrixWorld);
+            worldPts[vi] = p;
+            const key = `${Math.round(p.x * 10000)},${Math.round(p.y * 10000)},${Math.round(p.z * 10000)}`;
+            const bucket = weldMap.get(key);
+            if (bucket) bucket.push(vi);
+            else weldMap.set(key, [vi]);
+          }
+
+          const adj: number[][] = Array.from({ length: vCount }, () => []);
+          for (const bucket of weldMap.values()) {
+            for (let i = 1; i < bucket.length; i++) {
+              adj[bucket[0]].push(bucket[i]);
+              adj[bucket[i]].push(bucket[0]);
+            }
+          }
+
+          const triCount = geo.index ? geo.index.count / 3 : posAttr.count / 3;
+          for (let t = 0; t < triCount; t++) {
+            const i0 = geo.index ? geo.index.getX(t * 3) : t * 3;
+            const i1 = geo.index ? geo.index.getX(t * 3 + 1) : t * 3 + 1;
+            const i2 = geo.index ? geo.index.getX(t * 3 + 2) : t * 3 + 2;
+            adj[i0].push(i1, i2);
+            adj[i1].push(i0, i2);
+            adj[i2].push(i0, i1);
+          }
+
+          const compId = new Int32Array(vCount).fill(-1);
+          const compIsOuterSpinner: boolean[] = [];
+          let cIdx = 0;
+          for (let vi = 0; vi < vCount; vi++) {
+            if (compId[vi] !== -1) continue;
+            const queue = [vi];
+            compId[vi] = cIdx;
+            let minAbsX = Infinity;
+            let maxR = 0;
+            for (let h = 0; h < queue.length; h++) {
+              const u = queue[h];
+              const p = worldPts[u];
+              const absX = Math.abs(p.x);
+              if (absX < minAbsX) minAbsX = absX;
+              const r = Math.hypot(p.y - 0.3583, p.z - -1.0179);
+              if (r > maxR) maxR = r;
+              for (const w of adj[u]) {
+                if (compId[w] === -1) {
+                  compId[w] = cIdx;
+                  queue.push(w);
+                }
+              }
+            }
+            // The outer 3-eared knock-off spinner & center cap emblem have all vertices at |x| >= 0.8165 and maxR < 0.09,
+            // while the inner wheel hub barrel extends inward to |x| = 0.7295 and stays bolted to the wheel!
+            compIsOuterSpinner.push(minAbsX >= 0.8165 && maxR < 0.095);
+            cIdx++;
+          }
+
+          const isLeftWheel = rimMesh.name.toLowerCase().includes('bl44');
+          const pivotPos = isLeftWheel ? leftSpinnerPivotPos : rightSpinnerPivotPos;
+          const spinnerTris: Array<[number, number, number]> = [];
+          const keptRimIdx: number[] = [];
+
+          for (let t = 0; t < triCount; t++) {
+            const i0 = geo.index ? geo.index.getX(t * 3) : t * 3;
+            const i1 = geo.index ? geo.index.getX(t * 3 + 1) : t * 3 + 1;
+            const i2 = geo.index ? geo.index.getX(t * 3 + 2) : t * 3 + 2;
+            if (compIsOuterSpinner[compId[i0]]) {
+              spinnerTris.push([i0, i1, i2]);
+            } else {
+              keptRimIdx.push(i0, i1, i2);
+            }
+          }
+
+          if (spinnerTris.length > 0) {
+            const flipRimWinding = rimMesh.matrixWorld.determinant() < 0;
+            const outPos = new Float32Array(spinnerTris.length * 9);
+            const outNorm = normAttr ? new Float32Array(spinnerTris.length * 9) : null;
+            const outUv = uvAttr ? new Float32Array(spinnerTris.length * 6) : null;
+            const vTmp = new THREE.Vector3();
+            const nTmp = new THREE.Vector3();
+            let pIdx = 0;
+            let uIdx = 0;
+            for (const tri of spinnerTris) {
+              const ordered: [number, number, number] = flipRimWinding
+                ? [tri[0], tri[2], tri[1]]
+                : tri;
+              for (const vi of ordered) {
+                vTmp.copy(worldPts[vi]).sub(pivotPos);
+                outPos[pIdx] = vTmp.x;
+                outPos[pIdx + 1] = vTmp.y;
+                outPos[pIdx + 2] = vTmp.z;
+                if (outNorm && normAttr) {
+                  nTmp.fromBufferAttribute(normAttr, vi).applyMatrix3(normalMat).normalize();
+                  outNorm[pIdx] = nTmp.x;
+                  outNorm[pIdx + 1] = nTmp.y;
+                  outNorm[pIdx + 2] = nTmp.z;
+                }
+                if (outUv && uvAttr) {
+                  outUv[uIdx] = uvAttr.getX(vi);
+                  outUv[uIdx + 1] = uvAttr.getY(vi);
+                  uIdx += 2;
+                }
+                pIdx += 3;
+              }
+            }
+            const spinnerGeo = new THREE.BufferGeometry();
+            spinnerGeo.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
+            if (outNorm) spinnerGeo.setAttribute('normal', new THREE.BufferAttribute(outNorm, 3));
+            if (outUv) spinnerGeo.setAttribute('uv', new THREE.BufferAttribute(outUv, 2));
+            spinnerGeo.computeBoundingSphere();
+            const mat = Array.isArray(rimMesh.material)
+              ? rimMesh.material.map((m) => m.clone())
+              : rimMesh.material.clone();
+            const extractedSpinner = new THREE.Mesh(spinnerGeo, mat);
+            if (isLeftWheel) leftSpinnerMeshes.push(extractedSpinner);
+            else rightSpinnerMeshes.push(extractedSpinner);
+
+            geo.setIndex(keptRimIdx);
+            geo.computeBoundingSphere();
+          }
+        }
+
         const gadgetsRig = createQBranchGadgetsRig(
           trunkShieldProfile,
           {
@@ -1558,6 +1705,12 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
             passengerSeatMeshes,
             passengerSeatCenter,
             roofSurfaceY,
+          },
+          {
+            leftSpinnerMeshes,
+            leftSpinnerPivotPos,
+            rightSpinnerMeshes,
+            rightSpinnerPivotPos,
           }
         );
         scene.add(gadgetsRig.root);

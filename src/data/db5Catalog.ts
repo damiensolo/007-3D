@@ -87,7 +87,7 @@ export const SUBSYSTEMS: SubsystemMeta[] = [
     name: 'Q-Branch Exterior Gadgets',
     shortName: 'Q-Gadgets',
     color: '#06b6d4',
-    description: 'Revolving 3-way plates, hydraulic battering rams, armored rear shield, smoke screen, oil slick, and ejector roof hatch.',
+    description: 'Revolving 3-way plates, telescoping knock-off tyre slashers, hydraulic battering rams, armored rear shield, smoke screen, oil slick, caltrops, and ejector roof hatch.',
   },
 ];
 

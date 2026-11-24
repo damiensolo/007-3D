@@ -6,6 +6,7 @@ export type QBranchGadgetKey =
   | 'smokeScreen'
   | 'frontRam'
   | 'rearRam'
+  | 'tyreSlashers'
   | 'wingGuns'
   | 'roofHatch'
   | 'bulletShield';
@@ -21,6 +22,7 @@ export interface QBranchGadgetStates {
   smokeScreen: boolean;
   frontRam: boolean;
   rearRam: boolean;
+  tyreSlashers: boolean;
   wingGuns: boolean;
   roofHatch: boolean;
   seatEjected: boolean;
@@ -49,7 +51,10 @@ export interface QBranchCabinRig {
   armrestGroup: THREE.Group;
   armrestLidPivot: THREE.Group;
   plateLeverGroup: THREE.Group;
-  togglePivots: Record<'oilSlick' | 'smokeScreen' | 'frontRam' | 'rearRam' | 'caltrops', THREE.Group>;
+  togglePivots: Record<
+    'oilSlick' | 'smokeScreen' | 'frontRam' | 'rearRam' | 'tyreSlashers' | 'caltrops',
+    THREE.Group
+  >;
   rockerPivots: Record<'wingGuns' | 'roofHatch' | 'bulletShield', THREE.Group>;
   switchLeds: Record<QBranchGadgetKey, THREE.MeshStandardMaterial>;
   subParts: CabinSubPart[];
@@ -221,45 +226,53 @@ function createArmrestLegendTexture(): THREE.CanvasTexture {
   };
 
   // Section 1 (Front / +Z, closest to gearstick): OIL SLICK | REAR SMOKE
-  drawToggleIcon(145, 118, 'OIL', 'SLICK');
-  drawToggleIcon(367, 118, 'REAR', 'SMOKE');
+  drawToggleIcon(145, 98, 'OIL', 'SLICK');
+  drawToggleIcon(367, 98, 'REAR', 'SMOKE');
   ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.moveTo(40, 215);
-  ctx.lineTo(472, 215);
+  ctx.moveTo(40, 178);
+  ctx.lineTo(472, 178);
   ctx.stroke();
 
   // Section 2: FRONT RAM | REAR RAM
-  drawToggleIcon(145, 315, 'FRONT', 'RAM');
-  drawToggleIcon(367, 315, 'REAR', 'RAM');
+  drawToggleIcon(145, 258, 'FRONT', 'RAM');
+  drawToggleIcon(367, 258, 'REAR', 'RAM');
   ctx.beginPath();
-  ctx.moveTo(40, 415);
-  ctx.lineTo(472, 415);
+  ctx.moveTo(40, 338);
+  ctx.lineTo(472, 338);
   ctx.stroke();
 
-  // Section 3: FRONT GUNS | ROOF HATCH (slide-switch icons)
+  // Section 3: TYRE SLASHER | TIRE NAILS (completes the symmetric 2x3 bank of 6 toggles)
+  drawToggleIcon(145, 418, 'TYRE', 'SLASHER');
+  drawToggleIcon(367, 418, 'TIRE', 'NAILS');
+  ctx.beginPath();
+  ctx.moveTo(40, 498);
+  ctx.lineTo(472, 498);
+  ctx.stroke();
+
+  // Section 4: FRONT GUNS | ROOF HATCH (slide-switch icons)
   const drawSliderIcon = (cx: number, cy: number, topLabel: string, botLabel: string) => {
-    ctx.font = 'bold 25px sans-serif';
-    ctx.fillText(topLabel, cx, cy - 72);
+    ctx.font = 'bold 24px sans-serif';
+    ctx.fillText(topLabel, cx, cy - 64);
     ctx.lineWidth = 4;
-    ctx.strokeRect(cx - 26, cy - 38, 52, 76);
-    ctx.fillRect(cx - 22, cy - 34, 44, 34);
+    ctx.strokeRect(cx - 24, cy - 34, 48, 68);
+    ctx.fillRect(cx - 20, cy - 30, 40, 30);
     ctx.beginPath();
-    ctx.moveTo(cx - 42, cy + 28);
-    ctx.lineTo(cx - 42, cy - 28);
-    ctx.lineTo(cx - 50, cy - 16);
-    ctx.moveTo(cx - 42, cy - 28);
-    ctx.lineTo(cx - 34, cy - 16);
+    ctx.moveTo(cx - 40, cy + 24);
+    ctx.lineTo(cx - 40, cy - 24);
+    ctx.lineTo(cx - 47, cy - 13);
+    ctx.moveTo(cx - 40, cy - 24);
+    ctx.lineTo(cx - 33, cy - 13);
     ctx.stroke();
-    ctx.fillText(botLabel, cx, cy + 72);
+    ctx.fillText(botLabel, cx, cy + 64);
   };
 
-  drawSliderIcon(145, 535, 'FRONT', 'GUNS');
-  drawSliderIcon(367, 535, 'ROOF', 'HATCH');
+  drawSliderIcon(145, 598, 'FRONT', 'GUNS');
+  drawSliderIcon(367, 598, 'ROOF', 'HATCH');
   ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.moveTo(40, 650);
-  ctx.lineTo(472, 650);
+  ctx.moveTo(40, 695);
+  ctx.lineTo(472, 695);
   ctx.stroke();
 
   // Section 4 (Rear / -Z): E-Gate (1, 2, 3) on Left + BULLET on Right
@@ -312,7 +325,7 @@ function createSwitchDeckLabelsTexture(): THREE.CanvasTexture {
   // Horizontal section divider hairlines
   ctx.strokeStyle = 'rgba(148, 163, 184, 0.18)';
   ctx.lineWidth = 2;
-  for (const yLine of [222, 412, 668]) {
+  for (const yLine of [185, 338, 492, 692]) {
     ctx.beginPath();
     ctx.moveTo(32, yLine);
     ctx.lineTo(480, yLine);
@@ -325,19 +338,18 @@ function createSwitchDeckLabelsTexture(): THREE.CanvasTexture {
   //   local +Y (v=1, canvas y=0)   -> world -Z
   //   local -Y (v=0, canvas y=1024)-> world +Z
   // Furthermore, when viewed from +Y with camera.up = (0,0,+1), world +X is on screen-LEFT and world -X is on screen-RIGHT,
-  // so we draw the text mirrored horizontally around each plaque center so that when repeat.x = -1 is applied (or we map wx directly),
-  // every plaque sits at the exact (wx, wz) switch position and reads left-to-right!
+  // so we draw the text mirrored horizontally around each plaque center so that every plaque sits at the exact (wx, wz) switch position and reads left-to-right!
   const toCanvasX = (wx: number) => 256 + (wx / 0.124) * 512;
   const toCanvasY = (wz: number) => 512 + (wz / 0.268) * 1024;
 
   const drawMirroredPlaque = (wx: number, wz: number, text: string, accent = '#e2e8f0') => {
     const cx = toCanvasX(wx);
     const cy = toCanvasY(wz);
-    const w = Math.max(96, text.length * 14 + 20);
-    const h = 24;
+    const w = Math.max(96, text.length * 13.5 + 18);
+    const h = 22;
     ctx.save();
     ctx.translate(cx, cy);
-    // Flip local X so when viewed from +Y with camera.up=(0,0,+1) (where +X is left and -X is right), text reads left-to-right!
+    // Flip local X and Y so when viewed from +Y with camera.up=(0,0,+1), text reads cleanly left-to-right and right-side up!
     ctx.scale(-1, -1);
     ctx.fillStyle = 'rgba(9, 11, 15, 0.90)';
     ctx.fillRect(-w / 2, -h / 2, w, h);
@@ -346,31 +358,32 @@ function createSwitchDeckLabelsTexture(): THREE.CanvasTexture {
     ctx.strokeRect(-w / 2, -h / 2, w, h);
 
     ctx.fillStyle = accent;
-    ctx.font = 'bold 15px "Arial Narrow", "Helvetica", sans-serif';
+    ctx.font = 'bold 14px "Arial Narrow", "Helvetica", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, 0, 1);
     ctx.restore();
   };
 
-  // Row 1 (z = +0.098, LED at +0.1145): place plaque just below toggle at z = +0.075
-  drawMirroredPlaque(0.028, 0.075, 'OIL SLICK', '#fde047');
-  drawMirroredPlaque(-0.028, 0.075, 'SMOKE', '#cbd5e1');
+  // Row 1 Toggles (z = +0.104): Oil Slick (+0.028) & Rear Smoke (-0.028)
+  drawMirroredPlaque(0.028, 0.085, 'OIL SLICK', '#fde047');
+  drawMirroredPlaque(-0.028, 0.085, 'SMOKE', '#cbd5e1');
 
-  // Row 2 (z = +0.052, LED at +0.0685): place plaque just below toggle at z = +0.028
-  drawMirroredPlaque(0.028, 0.028, 'FRONT RAM', '#fca5a5');
-  drawMirroredPlaque(-0.028, 0.028, 'REAR RAM', '#fca5a5');
+  // Row 2 Toggles (z = +0.064): Front Ram (+0.028) & Rear Ram (-0.028)
+  drawMirroredPlaque(0.028, 0.045, 'FRONT RAM', '#fca5a5');
+  drawMirroredPlaque(-0.028, 0.045, 'REAR RAM', '#fca5a5');
 
-  // Row 3 (z = -0.008, rocker housing z in [-0.034, +0.018]): place plaque just below rocker at z = -0.039
-  drawMirroredPlaque(0.028, -0.039, 'WING GUNS', '#fdba74');
-  drawMirroredPlaque(-0.028, -0.039, 'ROOF HATCH', '#7dd3fc');
+  // Row 3 Toggles (z = +0.024): Tyre Slashers (+0.028) & Tire Nails (-0.028)
+  drawMirroredPlaque(0.028, 0.005, 'SLASHER', '#38bdf8');
+  drawMirroredPlaque(-0.028, 0.005, 'NAILS', '#6ee7b7');
 
-  // Row 4 Right (-X = -0.028): Caltrops toggle at z = -0.052 (place plaque at z = -0.070) & Bullet Shield rocker at z = -0.095 (place plaque at z = -0.125)
-  drawMirroredPlaque(-0.028, -0.070, 'NAILS', '#6ee7b7');
+  // Row 4 Rockers (z = -0.028): Wing Guns (+0.028) & Roof Hatch (-0.028)
+  drawMirroredPlaque(0.028, -0.056, 'WING GUNS', '#fdba74');
+  drawMirroredPlaque(-0.028, -0.056, 'ROOF HATCH', '#7dd3fc');
+
+  // Row 5 Bottom: Revolving Plates E-Gate (+0.028, z = -0.094) & Bullet Shield Rocker (-0.028, z = -0.094)
+  drawMirroredPlaque(0.028, -0.129, 'PLATES 1·2·3', '#fcd34d');
   drawMirroredPlaque(-0.028, -0.125, 'SHIELD', '#d8b4fe');
-
-  // Row 4 Left (+X = +0.028): Revolving Plates E-Gate at z = -0.088 (place plaque at z = -0.128)
-  drawMirroredPlaque(0.028, -0.128, 'PLATES 1·2·3', '#fcd34d');
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -741,14 +754,19 @@ export function createQBranchCabinRig(
   legendPlane.position.set(-hingePivotX, -0.0045, 0);
   armrestLidPivot.add(legendPlane);
 
-  // --- Corrected Switchboard Layout (Front +Z near gearstick -> Rear -Z) ---
+  // --- Symmetric Switchboard Layout (Front +Z near gearstick -> Rear -Z) ---
+  // Top Bank: 6 Sculpted Black Duckbill Paddle Toggles in a clean 2x3 grid
+  // Middle/Bottom Bank: 3 Arched-Shroud Rocker Switches + 3-Position Revolving Plates E-Gate
   const switchLeds = {} as Record<QBranchGadgetKey, THREE.MeshStandardMaterial>;
-  const togglePivots = {} as Record<'oilSlick' | 'smokeScreen' | 'frontRam' | 'rearRam' | 'caltrops', THREE.Group>;
+  const togglePivots = {} as Record<
+    'oilSlick' | 'smokeScreen' | 'frontRam' | 'rearRam' | 'tyreSlashers' | 'caltrops',
+    THREE.Group
+  >;
   const rockerPivots = {} as Record<'wingGuns' | 'roofHatch' | 'bulletShield', THREE.Group>;
 
-  // A. Front 2x2 (+Z, closest to gearstick) + Rear-Left Tactical Caltrop Toggle: 5 Sculpted Black Duckbill Paddle Toggles
+  // A. Front 2x3 Grid (6 Sculpted Black Duckbill Paddle Toggles)
   const toggleSpecs: Array<{
-    key: 'oilSlick' | 'smokeScreen' | 'frontRam' | 'rearRam' | 'caltrops';
+    key: 'oilSlick' | 'smokeScreen' | 'frontRam' | 'rearRam' | 'tyreSlashers' | 'caltrops';
     label: string;
     note: string;
     x: number;
@@ -760,7 +778,7 @@ export function createQBranchCabinRig(
       label: 'Oil Slick Toggle Switch',
       note: 'Activates the hinged left rear taillight oil slick dispenser.',
       x: 0.028,
-      z: 0.098,
+      z: 0.104,
       color: 0xeab308,
     },
     {
@@ -768,7 +786,7 @@ export function createQBranchCabinRig(
       label: 'Rear Smoke Screen Toggle Switch',
       note: 'Deploys dense rear exhaust smoke screen.',
       x: -0.028,
-      z: 0.098,
+      z: 0.104,
       color: 0x94a3b8,
     },
     {
@@ -776,7 +794,7 @@ export function createQBranchCabinRig(
       label: 'Front Battering Ram Toggle Switch',
       note: 'Extends hydraulic front bumper over-rider rams.',
       x: 0.028,
-      z: 0.052,
+      z: 0.064,
       color: 0xef4444,
     },
     {
@@ -784,15 +802,23 @@ export function createQBranchCabinRig(
       label: 'Rear Battering Ram Toggle Switch',
       note: 'Extends hydraulic rear bumper over-rider rams.',
       x: -0.028,
-      z: 0.052,
+      z: 0.064,
       color: 0xef4444,
+    },
+    {
+      key: 'tyreSlashers',
+      label: 'Rear Tyre Slasher Toggle Switch',
+      note: 'Extends and spins the telescoping 3-eared Roman-chariot knock-off tyre slasher blades from the rear wire-wheel hubs.',
+      x: 0.028,
+      z: 0.024,
+      color: 0x38bdf8,
     },
     {
       key: 'caltrops',
       label: 'Caltrop / Tire Nails Toggle Switch',
       note: 'Drops the right rear taillight cluster to scatter 4-pointed steel caltrops.',
       x: -0.028,
-      z: -0.052,
+      z: 0.024,
       color: 0x10b981,
     },
   ];
@@ -872,7 +898,7 @@ export function createQBranchCabinRig(
 
     // Flush machined indicator boss forward (+Z) of each toggle
     const ledRing = new THREE.Mesh(miniRingGeo, machinedAluMat);
-    ledRing.position.set(spec.x, deckY + 0.0007, spec.z + 0.0165);
+    ledRing.position.set(spec.x, deckY + 0.0007, spec.z + 0.0145);
     armrestGroup.add(ledRing);
 
     const ledMat = new THREE.MeshStandardMaterial({
@@ -882,7 +908,7 @@ export function createQBranchCabinRig(
       roughness: 0.2,
     });
     const led = new THREE.Mesh(new THREE.CylinderGeometry(0.0014, 0.0014, 0.0016, 12), ledMat);
-    led.position.set(spec.x, deckY + 0.0008, spec.z + 0.0165);
+    led.position.set(spec.x, deckY + 0.0008, spec.z + 0.0145);
     armrestGroup.add(led);
     switchLeds[spec.key] = ledMat;
   }
@@ -897,11 +923,11 @@ export function createQBranchCabinRig(
     color: number;
   }> = [
     {
-      key: ' wingGuns'.trim() as 'wingGuns',
+      key: 'wingGuns',
       label: 'Front Guns Rocker Switch',
       note: 'Arms and deploys the twin front-wing Browning .30-caliber machine guns.',
       x: 0.028,
-      z: -0.008,
+      z: -0.028,
       color: 0xf97316,
     },
     {
@@ -909,7 +935,7 @@ export function createQBranchCabinRig(
       label: 'Roof Hatch Arming Switch',
       note: 'Unlocks the passenger-side ejector seat roof hatch.',
       x: -0.028,
-      z: -0.008,
+      z: -0.028,
       color: 0x38bdf8,
     },
     {
@@ -917,7 +943,7 @@ export function createQBranchCabinRig(
       label: 'Bullet Shield Rocker Switch',
       note: 'Raises the armored steel deflector plate behind the rear windscreen.',
       x: -0.028,
-      z: -0.095,
+      z: -0.094,
       color: 0xa855f7,
     },
   ];
@@ -1019,7 +1045,7 @@ export function createQBranchCabinRig(
     rockerPivots[spec.key] = rockerPivot;
 
     const ledRing = new THREE.Mesh(miniRingGeo, machinedAluMat);
-    ledRing.position.set(spec.x, deckY + 0.0007, spec.z + 0.032);
+    ledRing.position.set(spec.x, deckY + 0.0007, spec.z + 0.0285);
     armrestGroup.add(ledRing);
 
     const ledMat = new THREE.MeshStandardMaterial({
@@ -1029,14 +1055,14 @@ export function createQBranchCabinRig(
       roughness: 0.2,
     });
     const led = new THREE.Mesh(new THREE.CylinderGeometry(0.0014, 0.0014, 0.0016, 12), ledMat);
-    led.position.set(spec.x, deckY + 0.0008, spec.z + 0.032);
+    led.position.set(spec.x, deckY + 0.0008, spec.z + 0.0285);
     armrestGroup.add(led);
     switchLeds[spec.key] = ledMat;
   }
 
   // C. Rear-Right (+X, -Z): CNC-Beveled Aluminum E-Gate Plate & Turned Brass Lever (Revolving Plates 1/2/3)
   const gateX = 0.028;
-  const gateZ = -0.088;
+  const gateZ = -0.094;
 
   const gateOuterShape = createRoundedRectShape(0.046, 0.074, 0.0035);
   const hw = 0.0036; // E-slot half-width
@@ -1172,11 +1198,14 @@ export function updateQBranchCabinRig(
   const targetArmRot = state.armrestOpen ? -Math.PI * 0.6 : 0;
   rig.armrestLidPivot.rotation.z += (targetArmRot - rig.armrestLidPivot.rotation.z) * lerpFactor;
 
-  const toggleKeys: Array<'oilSlick' | 'smokeScreen' | 'frontRam' | 'rearRam' | 'caltrops'> = [
+  const toggleKeys: Array<
+    'oilSlick' | 'smokeScreen' | 'frontRam' | 'rearRam' | 'tyreSlashers' | 'caltrops'
+  > = [
     'oilSlick',
     'smokeScreen',
     'frontRam',
     'rearRam',
+    'tyreSlashers',
     'caltrops',
   ];
   for (const key of toggleKeys) {
@@ -1200,7 +1229,7 @@ export function updateQBranchCabinRig(
 
   // Physically constrained E-gate path: slide out to spine X -> slide along spine Z -> slide into target branch X
   const gateX = 0.028;
-  const gateZ = -0.088;
+  const gateZ = -0.094;
   const spineX = gateX + 0.011;
   const branchTipX = gateX - 0.010;
   const slotOffsets = [-0.023, 0, 0.023];

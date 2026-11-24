@@ -54,6 +54,13 @@ export interface EjectorExtractData {
   roofSurfaceY: (x: number, z: number) => number;
 }
 
+export interface RearWheelSpinnerExtractData {
+  leftSpinnerMeshes: THREE.Mesh[];
+  leftSpinnerPivotPos: THREE.Vector3;
+  rightSpinnerMeshes: THREE.Mesh[];
+  rightSpinnerPivotPos: THREE.Vector3;
+}
+
 interface CaltropItem {
   active: boolean;
   settled: boolean;
@@ -78,12 +85,24 @@ interface EjectAirParticle {
   rot: number;
 }
 
+export interface TyreSlasherUnit {
+  sideSign: number; // +1 for Left (+X), -1 for Right (-X)
+  rootGroup: THREE.Group;
+  spinGroup: THREE.Group;
+  stage1Sleeve: THREE.Group;
+  stage2Shaft: THREE.Group;
+  spinnerHeadGroup: THREE.Group;
+}
+
 export interface QBranchGadgetsRig {
   root: THREE.Group;
   frontPlateDrum: THREE.Group;
   rearPlateDrum: THREE.Group;
   frontRams: THREE.Group[];
   rearRams: THREE.Group[];
+  tyreSlasherUnits: TyreSlasherUnit[];
+  tyreSlasherExtend: number;
+  tyreSlasherSpin: number;
   bulletShieldGroup: THREE.Group;
   roofHatchGroup: THREE.Group;
   roofHatchBasePos: THREE.Vector3;
@@ -272,7 +291,8 @@ function buildTetraCaltropGeometry(radius = 0.022): THREE.BufferGeometry {
 export function createQBranchGadgetsRig(
   trunkShieldProfile?: Array<{ x: number; y: number }>,
   tailLightSplits?: TailLightSplitData,
-  ejectorExtract?: EjectorExtractData
+  ejectorExtract?: EjectorExtractData,
+  rearSpinnerExtract?: RearWheelSpinnerExtractData
 ): QBranchGadgetsRig {
   const root = new THREE.Group();
   root.name = 'QBranch_ExteriorGadgets';
@@ -1775,699 +1795,938 @@ export function createQBranchGadgetsRig(
   caltropInstanced.frustumCulled = false;
   root.add(caltropInstanced);
 
-  return {
-    root,
-    frontPlateDrum: frontPlate.drum,
-    rearPlateDrum: rearPlate.drum,
-    frontRams,
-    rearRams,
-    bulletShieldGroup,
-    roofHatchGroup,
-    roofHatchBasePos,
-    outerBevelMesh,
-    panelSkirtMesh,
-    roofSealMesh,
-    innerFlangeMesh,
-    passengerSeatGroup,
-    passengerSeatBasePos,
-    ejectAirPoints,
-    ejectAirParticles,
-    leftOilLampPivot,
-    leftOilNozzle,
-    leftOilArms,
-    rightCaltropPivot,
-    subParts,
-    plateAngle: 0,
-    ramFrontExtend: 0,
-    ramRearExtend: 0,
-    shieldExtend: 0,
-    hatchActivePrev: false,
-    hatchTimer: 0,
-    hatchOpen: 0,
-    seatEjectProgress: 0,
-    seatPhase: 'stowed',
-    seatPos: passengerSeatBasePos.clone(),
-    seatVel: new THREE.Vector3(),
-    seatRot: new THREE.Euler(),
-    seatAngVel: new THREE.Vector3(),
-    seatBounces: 0,
-    roofPos: roofHatchBasePos.clone(),
-    roofVel: new THREE.Vector3(),
-    roofRot: new THREE.Euler(),
-    roofAngVel: new THREE.Vector3(),
-    roofBounces: 0,
-    roofSettled: false,
-    oilLidOpen: 0,
-    caltropLidOpen: 0,
-    smokePoints,
-    smokeParticles,
-    oilBlobInstanced,
-    oilBlobMat,
-    oilFilamentMesh,
-    oilFilamentMat,
-    oilDroplets,
-    oilMetaballs,
-    oilPuddleMat,
-    oilImpact,
-    oilSpawnAccum: 0,
-    caltropInstanced,
-    caltrops,
-    time: 0,
-  };
-}
+  // =========================================================================
+  // 6. REAR WHEEL TELESCOPING ROMAN-CHARIOT TYRE SLASHERS (Goldfinger, 1964)
+  // =========================================================================
+  // Uses the actual 3-eared Borrani knock-off spinner extracted directly from the rear wire-wheel GLB mesh
+  // (Comp 77/64 on Ani_Wheel_BL44 and Comp 33 on Ani_Disc_Scale_BR6), while the inner splined wheel hub barrel
+  // and all 72 wire spokes remain mounted on the wheel!
+  // - When stowed (0%): the original 3-eared knock-off spinner sits at its exact factory position (0.0mm offset) on the wheel hub.
+  // - When activated: the original 3-eared knock-off spinner separates outward from the wheel hub on a CNC-machined
+  //   telescoping steel axle shaft emerging out of the center of the stationary wheel hub bore while spinning at wheel speed!
+  const tyreSlasherUnits: TyreSlasherUnit[] = [];
+  const rearHubConfigs: Array<{
+    side: 'Left' | 'Right';
+    sideSign: number;
+    pivotPos: THREE.Vector3;
+    extractedMeshes: THREE.Mesh[];
+  }> = [
+      {
+        side: 'Left',
+        sideSign: 1,
+        pivotPos:
+          rearSpinnerExtract?.leftSpinnerPivotPos ??
+          new THREE.Vector3(0.8175, 0.3582, -1.0177),
+        extractedMeshes: rearSpinnerExtract?.leftSpinnerMeshes ?? [],
+      },
+      {
+        side: 'Right',
+        sideSign: -1,
+        pivotPos:
+          rearSpinnerExtract?.rightSpinnerPivotPos ??
+          new THREE.Vector3(-0.8177, 0.3585, -1.0181),
+        extractedMeshes: rearSpinnerExtract?.rightSpinnerMeshes ?? [],
+      },
+    ];
 
-const _dummyObj = new THREE.Object3D();
-const _lookTarget = new THREE.Vector3();
+  // Precision LatheGeometry profile for the stationary wheel-hub axle collar & splined bore seat
+  // (revealed on the wheel hub face when the 3-eared knock-off spinner telescopes outward)
+  const hubSeatPoints = [
+    new THREE.Vector2(0.0, 0.002),
+    new THREE.Vector2(0.0175, 0.002),
+    new THREE.Vector2(0.0185, -0.008),
+    new THREE.Vector2(0.0255, -0.008),
+    new THREE.Vector2(0.0275, -0.004),
+    new THREE.Vector2(0.0315, -0.002),
+    new THREE.Vector2(0.0335, -0.004),
+    new THREE.Vector2(0.0345, -0.016),
+  ];
+  const hubSeatGeo = new THREE.LatheGeometry(hubSeatPoints, 32);
 
-/**
- * Smoothly updates all exterior Q-Branch mechanical assemblies, custom GLSL smoke particles,
- * arcing oil droplets, and the iridescent spreading ground oil slick.
- */
-export function updateQBranchGadgetsRig(
-  rig: QBranchGadgetsRig,
-  state: QBranchGadgetStates,
-  dt: number
-): void {
-  const safeDt = Math.min(dt, 0.05);
-  rig.time += safeDt;
-
-  // 1. Revolving 3-Way Number Plates
-  const targetPlateAngle = state.plateIndex * ((Math.PI * 2) / 3);
-  let diff = targetPlateAngle - rig.plateAngle;
-  while (diff < -Math.PI) diff += Math.PI * 2;
-  while (diff > Math.PI) diff -= Math.PI * 2;
-  rig.plateAngle += diff * Math.min(1, safeDt * 9);
-  rig.frontPlateDrum.rotation.x = rig.plateAngle;
-  rig.rearPlateDrum.rotation.x = rig.plateAngle;
-
-  // 2. Front & Rear Hydraulic Battering Rams
-  rig.ramFrontExtend += ((state.frontRam ? 1 : 0) - rig.ramFrontExtend) * Math.min(1, safeDt * 7);
-  rig.ramRearExtend += ((state.rearRam ? 1 : 0) - rig.ramRearExtend) * Math.min(1, safeDt * 7);
-  for (const r of rig.frontRams) r.position.z = rig.ramFrontExtend * 0.26;
-  for (const r of rig.rearRams) r.position.z = rig.ramRearExtend * 0.26;
-
-  // 3. Bullet-Resistant Rear Shield (rises vertically from -0.326m stowed to 0m deployed)
-  rig.shieldExtend += ((state.bulletShield ? 1 : 0) - rig.shieldExtend) * Math.min(1, safeDt * 5.5);
-  rig.bulletShieldGroup.position.y = -0.326 + rig.shieldExtend * 0.326;
-
-  // 4. Two-Stage Jet-Cockpit Compressed-Air Ejection Sequence
-  // Triggered ONLY when Ejector Switch is armed AND Red Gear-Knob Button is pressed (state.seatEjected)
-  // Stage 1 (0.00s ->): Pneumatic bolts shear and blast the flush roof panel upward & rearward to the tarmac
-  // Stage 2 (0.07s -> 0.19s): Seat accelerates up the vertical guide rails through the roof opening with compressed-air burst
-  // Stage 3 (0.19s ->): Free ballistic flight under gravity (g = 9.81 m/s²), clearing the car and impacting/bouncing/skidding on the ground
-  const triggerEjectBurst = state.seatEjected && !rig.hatchActivePrev;
-  if (triggerEjectBurst) {
-    rig.hatchTimer = 0;
-    rig.seatPhase = 'rails';
-    rig.seatPos.copy(rig.passengerSeatBasePos);
-    rig.seatVel.set(0, 0, 0);
-    rig.seatRot.set(0, 0, 0);
-    rig.seatAngVel.set(0, 0, 0);
-    rig.seatBounces = 0;
-    rig.roofPos.copy(rig.roofHatchBasePos);
-    rig.roofVel.set(0.75, 5.8, -3.2);
-    rig.roofRot.set(0, 0, 0);
-    rig.roofAngVel.set(-4.8, 1.2, -2.5);
-    rig.roofBounces = 0;
-    rig.roofSettled = false;
+  // Stage-1 Machined Fluted Telescoping Outer Drive Sleeve (LatheGeometry with 4 turned lubrication/locking lands)
+  const stage1Points: THREE.Vector2[] = [
+    new THREE.Vector2(0.0165, 0.0),
+    new THREE.Vector2(0.0228, 0.0),
+    new THREE.Vector2(0.0235, 0.008),
+    new THREE.Vector2(0.0218, 0.010),
+  ];
+  for (let g = 0; g < 4; g++) {
+    const y0 = 0.014 + g * 0.026;
+    stage1Points.push(
+      new THREE.Vector2(0.0218, y0),
+      new THREE.Vector2(0.0200, y0 + 0.002),
+      new THREE.Vector2(0.0200, y0 + 0.007),
+      new THREE.Vector2(0.0218, y0 + 0.009)
+    );
   }
-  rig.hatchActivePrev = state.seatEjected;
+  stage1Points.push(
+    new THREE.Vector2(0.0218, 0.122),
+    new THREE.Vector2(0.0226, 0.125),
+    new THREE.Vector2(0.0226, 0.132),
+    new THREE.Vector2(0.0165, 0.134)
+  );
+  const stage1LatheGeo = new THREE.LatheGeometry(stage1Points, 32);
 
-  let airBurstBudget = 0;
-  if (state.seatEjected) {
-    rig.hatchTimer += safeDt;
-    const tPanel = THREE.MathUtils.clamp(rig.hatchTimer / 0.25, 0, 1);
-    rig.hatchOpen = tPanel;
-    const showCutoutTrim = tPanel > 0.015;
-    rig.outerBevelMesh.visible = showCutoutTrim;
-    rig.panelSkirtMesh.visible = showCutoutTrim;
-    rig.roofSealMesh.visible = showCutoutTrim;
-    rig.innerFlangeMesh.visible = showCutoutTrim;
+  // Stage-2 Inner Telescoping Drive Shaft (dark-nitride guide journal + mirror-polished chrome extension shaft + flared spinner boss)
+  const stage2ChromeGeo = new THREE.LatheGeometry(
+    [
+      new THREE.Vector2(0.0155, 0.048),
+      new THREE.Vector2(0.0178, 0.050),
+      new THREE.Vector2(0.0178, 0.155),
+      new THREE.Vector2(0.0215, 0.168),
+      new THREE.Vector2(0.0275, 0.175),
+      new THREE.Vector2(0.0, 0.175),
+    ],
+    32
+  );
 
-    // Stage 1: Ballistic roof panel flight & ground impact
-    if (!rig.roofSettled) {
-      if (rig.roofPos.y > 0.036 || rig.roofVel.y > 0) {
-        rig.roofVel.y -= 9.81 * safeDt;
-        rig.roofPos.addScaledVector(rig.roofVel, safeDt);
-        rig.roofRot.x += rig.roofAngVel.x * safeDt;
-        rig.roofRot.y += rig.roofAngVel.y * safeDt;
-        rig.roofRot.z += rig.roofAngVel.z * safeDt;
+  for (const cfg of rearHubConfigs) {
+    const slasherSemanticDir: [number, number, number] = [cfg.sideSign * 1.35, 0.08, -0.35];
+    const rootGroup = new THREE.Group();
+    rootGroup.position.copy(cfg.pivotPos);
+    root.add(rootGroup);
 
-        if (rig.roofPos.y <= 0.035) {
-          rig.roofPos.y = 0.035;
-          rig.roofBounces++;
-          if (Math.abs(rig.roofVel.y) > 0.7 && rig.roofBounces <= 2) {
-            rig.roofVel.y = Math.abs(rig.roofVel.y) * 0.28;
-            rig.roofVel.x *= 0.55;
-            rig.roofVel.z *= 0.55;
-            rig.roofAngVel.multiplyScalar(0.42);
-          } else {
-            rig.roofVel.y = 0;
+    // Spin group rotates around the world X axle axis (outward is +X on Left, -X on Right)
+    const spinGroup = new THREE.Group();
+    rootGroup.add(spinGroup);
+
+    // Axial group orienting local +Y outward along the wheel axle (+X for Left, -X for Right) for cylindrical lathe parts
+    const axleAligned = new THREE.Group();
+    axleAligned.rotation.z = cfg.sideSign > 0 ? -Math.PI / 2 : Math.PI / 2;
+    spinGroup.add(axleAligned);
+
+    // 1. Stationary/Hub-Seated Machined Splined Axle Collar (stays attached to the wheel hub face when the spinner separates)
+    const hubCollar = register(
+      new THREE.Mesh(hubSeatGeo, chromeMat),
+      `Rear ${cfg.side} Wheel Hub Axle Seat`,
+      'CNC-Machined Chrome Splined Hub',
+      'Precision-machined center-lock wheel hub collar and internal axle bore from which the telescoping tyre-slasher shaft emerges.',
+      slasherSemanticDir
+    );
+    axleAligned.add(hubCollar);
+
+    const hubBoreSeal = new THREE.Mesh(
+      new THREE.TorusGeometry(0.0225, 0.0022, 12, 28),
+      gunmetalMat
+    );
+    hubBoreSeal.rotation.x = Math.PI / 2;
+    hubBoreSeal.position.y = -0.001;
+    axleAligned.add(hubBoreSeal);
+
+    // 2. Stage-1 Fluted Telescoping Outer Sleeve (emerges from inside the wheel hub bore when activated)
+    const stage1Sleeve = new THREE.Group();
+    stage1Sleeve.visible = false;
+    axleAligned.add(stage1Sleeve);
+
+    const flutedSleeveMesh = register(
+        new THREE.Mesh(stage1LatheGeo, chromeMat),
+        `Rear ${cfg.side} Tyre Slasher Stage-1 Fluted Sleeve`,
+        'Turned & Grooved High-Tensile Steel',
+        'First-stage telescoping fluted steel sleeve emerging from the center of the rear wire-wheel hub.',
+        slasherSemanticDir
+      );
+    stage1Sleeve.add(flutedSleeveMesh);
+
+    // Dark gunmetal oil-seal wiper rings seated in the turned grooves
+    for (let g = 0; g < 4; g++) {
+        const yGroove = 0.0185 + g * 0.026;
+        const wiper = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.0204, 0.0204, 0.0045, 24),
+          gunmetalMat
+        );
+        wiper.position.y = yGroove;
+        stage1Sleeve.add(wiper);
+      }
+
+      // 3. Stage-2 Telescoping Inner Shaft (dark-nitride guide journal + polished chrome shaft terminating at the back of the original knock-off spinner)
+      const stage2Shaft = new THREE.Group();
+      stage2Shaft.visible = false;
+      axleAligned.add(stage2Shaft);
+
+    const nitrideJournal = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.0182, 0.0186, 0.052, 28),
+          gunmetalMat
+        );
+      nitrideJournal.position.y = 0.025;
+      stage2Shaft.add(nitrideJournal);
+
+    const chromeExtensionShaft = register(
+          new THREE.Mesh(stage2ChromeGeo, chromeMat),
+          `Rear ${cfg.side} Tyre Slasher Telescoping Axle Shaft`,
+          'Mirror-Polished Hardened Chrome Steel',
+          'Second-stage telescoping drive shaft carrying the wheel’s 3-eared knock-off spinner outward to shred an adjacent car’s tires.',
+          slasherSemanticDir
+        );
+      stage2Shaft.add(chromeExtensionShaft);
+
+    // Dark machined backing plate sealing the rear face of the separated knock-off spinner
+    const spinnerBackingPlate = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.0275, 0.0235, 0.006, 28),
+          gunmetalMat
+        );
+      spinnerBackingPlate.position.y = 0.173;
+      stage2Shaft.add(spinnerBackingPlate);
+
+        // 4. Original 3-Eared Knock-Off Wheel Spinner (extracted live from the rear wheel GLB mesh!)
+        // Sitting at (0,0,0) in spinGroup when stowed (100% identical to factory wheel hub),
+        // and translating outward along local X (cfg.sideSign * dist) at the tip of the telescoping shaft when activated!
+        const spinnerHeadGroup = new THREE.Group();
+        spinGroup.add(spinnerHeadGroup);
+
+        if (cfg.extractedMeshes.length > 0) {
+          for (const sm of cfg.extractedMeshes) {
+            register(
+              sm,
+              `Rear ${cfg.side} 3-Eared Knock-Off Tyre Slasher Spinner`,
+              'Original Borrani 3-Eared Chrome Knock-Off',
+              'The wheel’s actual 3-eared center-lock knock-off spinner: separates outward from the wheel hub on the telescoping axle shaft and spins at wheel speed.',
+              slasherSemanticDir
+            );
+            spinnerHeadGroup.add(sm);
           }
         }
-      } else {
-        rig.roofPos.y = 0.035;
-        const skid = Math.exp(-6.0 * safeDt);
-        rig.roofVel.x *= skid;
-        rig.roofVel.z *= skid;
-        rig.roofPos.x += rig.roofVel.x * safeDt;
-        rig.roofPos.z += rig.roofVel.z * safeDt;
-        const flatX = Math.round(rig.roofRot.x / Math.PI) * Math.PI;
-        rig.roofRot.x += (flatX - rig.roofRot.x) * Math.min(1, safeDt * 12);
-        rig.roofRot.z += (0 - rig.roofRot.z) * Math.min(1, safeDt * 12);
-        if (rig.roofVel.x * rig.roofVel.x + rig.roofVel.z * rig.roofVel.z < 0.002) {
-          rig.roofSettled = true;
-        }
+
+        tyreSlasherUnits.push({
+          sideSign: cfg.sideSign,
+          rootGroup,
+          spinGroup,
+          stage1Sleeve,
+          stage2Shaft,
+          spinnerHeadGroup,
+        });
       }
+
+      return {
+        root,
+        frontPlateDrum: frontPlate.drum,
+        rearPlateDrum: rearPlate.drum,
+        frontRams,
+        rearRams,
+        tyreSlasherUnits,
+        tyreSlasherExtend: 0,
+        tyreSlasherSpin: 0,
+        bulletShieldGroup,
+        roofHatchGroup,
+        roofHatchBasePos,
+        outerBevelMesh,
+        panelSkirtMesh,
+        roofSealMesh,
+        innerFlangeMesh,
+        passengerSeatGroup,
+        passengerSeatBasePos,
+        ejectAirPoints,
+        ejectAirParticles,
+        leftOilLampPivot,
+        leftOilNozzle,
+        leftOilArms,
+        rightCaltropPivot,
+        subParts,
+        plateAngle: 0,
+        ramFrontExtend: 0,
+        ramRearExtend: 0,
+        shieldExtend: 0,
+        hatchActivePrev: false,
+        hatchTimer: 0,
+        hatchOpen: 0,
+        seatEjectProgress: 0,
+        seatPhase: 'stowed',
+        seatPos: passengerSeatBasePos.clone(),
+        seatVel: new THREE.Vector3(),
+        seatRot: new THREE.Euler(),
+        seatAngVel: new THREE.Vector3(),
+        seatBounces: 0,
+        roofPos: roofHatchBasePos.clone(),
+        roofVel: new THREE.Vector3(),
+        roofRot: new THREE.Euler(),
+        roofAngVel: new THREE.Vector3(),
+        roofBounces: 0,
+        roofSettled: false,
+        oilLidOpen: 0,
+        caltropLidOpen: 0,
+        smokePoints,
+        smokeParticles,
+        oilBlobInstanced,
+        oilBlobMat,
+        oilFilamentMesh,
+        oilFilamentMat,
+        oilDroplets,
+        oilMetaballs,
+        oilPuddleMat,
+        oilImpact,
+        oilSpawnAccum: 0,
+        caltropInstanced,
+        caltrops,
+        time: 0,
+      };
     }
-    rig.roofHatchGroup.visible = true;
-    rig.roofHatchGroup.position.copy(rig.roofPos);
-    rig.roofHatchGroup.rotation.copy(rig.roofRot);
 
-    // Stage 2 & 3: Seat rail launch -> free ballistic flight -> tarmac impact & bounce
-    if (rig.seatPhase === 'rails') {
-      const tRailRaw = THREE.MathUtils.clamp((rig.hatchTimer - 0.07) / 0.12, 0, 1);
-      const railEase = tRailRaw * tRailRaw * (2 - tRailRaw);
-      rig.seatEjectProgress = railEase;
-      rig.seatPos.set(
-        rig.passengerSeatBasePos.x - 0.02 * railEase,
-        rig.passengerSeatBasePos.y + 1.05 * railEase,
-        rig.passengerSeatBasePos.z - 0.18 * railEase
-      );
-      rig.seatRot.set(-0.14 * railEase, 0, 0);
-      if (rig.hatchTimer >= 0.19) {
-        rig.seatPhase = 'airborne';
-        rig.seatVel.set(1.95, 7.2, -1.35);
-        rig.seatAngVel.set(-2.4, 0.85, -1.75);
-      }
-    } else if (rig.seatPhase === 'airborne') {
-      rig.seatEjectProgress = 1;
-      rig.seatVel.y -= 9.81 * safeDt;
-      rig.seatPos.addScaledVector(rig.seatVel, safeDt);
-      rig.seatRot.x += rig.seatAngVel.x * safeDt;
-      rig.seatRot.y += rig.seatAngVel.y * safeDt;
-      rig.seatRot.z += rig.seatAngVel.z * safeDt;
+    const _dummyObj = new THREE.Object3D();
+    const _lookTarget = new THREE.Vector3();
 
-      const seatGroundY = 0.25;
-      if (rig.seatPos.y <= seatGroundY) {
-        rig.seatPos.y = seatGroundY;
-        rig.seatBounces++;
-        if (Math.abs(rig.seatVel.y) > 0.75 && rig.seatBounces <= 3) {
-          const restitution = Math.max(0.16, 0.28 - rig.seatBounces * 0.04);
-          rig.seatVel.y = Math.abs(rig.seatVel.y) * restitution;
-          rig.seatVel.x *= 0.56;
-          rig.seatVel.z *= 0.56;
-          rig.seatAngVel.multiplyScalar(0.45);
+    /**
+     * Smoothly updates all exterior Q-Branch mechanical assemblies, custom GLSL smoke particles,
+     * arcing oil droplets, and the iridescent spreading ground oil slick.
+     */
+    export function updateQBranchGadgetsRig(
+      rig: QBranchGadgetsRig,
+      state: QBranchGadgetStates,
+      dt: number
+    ): void {
+      const safeDt = Math.min(dt, 0.05);
+      rig.time += safeDt;
+
+      // 1. Revolving 3-Way Number Plates
+      const targetPlateAngle = state.plateIndex * ((Math.PI * 2) / 3);
+      let diff = targetPlateAngle - rig.plateAngle;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      rig.plateAngle += diff * Math.min(1, safeDt * 9);
+      rig.frontPlateDrum.rotation.x = rig.plateAngle;
+      rig.rearPlateDrum.rotation.x = rig.plateAngle;
+
+      // 2. Front & Rear Hydraulic Battering Rams
+      rig.ramFrontExtend += ((state.frontRam ? 1 : 0) - rig.ramFrontExtend) * Math.min(1, safeDt * 7);
+      rig.ramRearExtend += ((state.rearRam ? 1 : 0) - rig.ramRearExtend) * Math.min(1, safeDt * 7);
+      for (const r of rig.frontRams) r.position.z = rig.ramFrontExtend * 0.26;
+      for (const r of rig.rearRams) r.position.z = rig.ramRearExtend * 0.26;
+
+      // 2B. Rear Wheel Telescoping Roman-Chariot Tyre Slashers:
+      // The wheel's single original 3-eared knock-off spinner separates from the wheel hub on the telescoping axle shaft and spins!
+      const targetSlasher = state.tyreSlashers ? 1 : 0;
+      rig.tyreSlasherExtend += (targetSlasher - rig.tyreSlasherExtend) * Math.min(1, safeDt * 6.5);
+        if (state.tyreSlashers || rig.tyreSlasherExtend > 0.002) {
+          const spinSpeed = THREE.MathUtils.lerp(0, 26.0, rig.tyreSlasherExtend);
+          rig.tyreSlasherSpin += spinSpeed * safeDt;
         } else {
-          rig.seatVel.y = 0;
-          rig.seatPhase = 'skid';
+          rig.tyreSlasherSpin = 0;
         }
-      }
-    } else if (rig.seatPhase === 'skid') {
-      rig.seatPos.y = 0.25;
-      const skid = Math.exp(-5.5 * safeDt);
-      rig.seatVel.x *= skid;
-      rig.seatVel.z *= skid;
-      rig.seatPos.x += rig.seatVel.x * safeDt;
-      rig.seatPos.z += rig.seatVel.z * safeDt;
-      const settleLerp = Math.min(1, safeDt * 10);
-      const targetRestX = Math.round(rig.seatRot.x / (Math.PI * 0.5)) * (Math.PI * 0.5);
-      rig.seatRot.x += (targetRestX - rig.seatRot.x) * settleLerp;
-      rig.seatRot.z += (0 - rig.seatRot.z) * settleLerp;
-      if (rig.seatVel.x * rig.seatVel.x + rig.seatVel.z * rig.seatVel.z < 0.002) {
-        rig.seatPhase = 'settled';
-      }
-    }
+        for (const unit of rig.tyreSlasherUnits) {
+          const ext = rig.tyreSlasherExtend;
+          const isExtended = ext > 0.004;
+          unit.stage1Sleeve.visible = isExtended;
+          unit.stage2Shaft.visible = isExtended;
 
-    rig.passengerSeatGroup.position.copy(rig.seatPos);
-    rig.passengerSeatGroup.rotation.copy(rig.seatRot);
+          // Stage 1 fluted sleeve slides out up to 0.115m; Stage 2 inner chrome shaft slides out from Stage 1 up to 0.285m total extension
+          const s1 = THREE.MathUtils.clamp(ext / 0.50, 0, 1);
+          const s2 = THREE.MathUtils.clamp((ext - 0.20) / 0.80, 0, 1);
 
-    if (rig.hatchTimer >= 0.04 && rig.hatchTimer <= 0.20) {
-      airBurstBudget = 16; // Immediate high-pressure valve release flash right as launch begins
-    } else if (rig.hatchTimer > 0.20 && rig.hatchTimer <= 0.38) {
-      airBurstBudget = 7;  // Trailing pneumatic exhaust plume as pistons clear the floor cylinders
-    }
-  } else {
-    // Smoothly retract seat and reseat roof panel 100% flush & seamless when reset
-    rig.hatchTimer = 0;
-    rig.seatPhase = 'stowed';
-    const resetLerp = Math.min(1, safeDt * 7.5);
-    rig.hatchOpen += (0 - rig.hatchOpen) * resetLerp;
-    const showCutoutTrim = rig.hatchOpen > 0.015;
-    rig.outerBevelMesh.visible = showCutoutTrim;
-    rig.panelSkirtMesh.visible = showCutoutTrim;
-    rig.roofSealMesh.visible = showCutoutTrim;
-    rig.innerFlangeMesh.visible = showCutoutTrim;
-    rig.seatEjectProgress += (0 - rig.seatEjectProgress) * resetLerp;
+          const stage1Tip = s1 * 0.115;
+          const totalOutwardDist = stage1Tip + s2 * 0.170; // 0.285m full extension
 
-    rig.roofPos.lerp(rig.roofHatchBasePos, resetLerp);
-    rig.roofRot.x += (0 - rig.roofRot.x) * resetLerp;
-    rig.roofRot.y += (0 - rig.roofRot.y) * resetLerp;
-    rig.roofRot.z += (0 - rig.roofRot.z) * resetLerp;
-    rig.roofHatchGroup.visible = true;
-    rig.roofHatchGroup.position.copy(rig.roofPos);
-    rig.roofHatchGroup.rotation.copy(rig.roofRot);
+          // Position Stage-1 sleeve and Stage-2 shaft so they telescope out from the wheel hub bore (y <= 0)
+          // and their outer tip always meets the back of the separated knock-off spinner at y = totalOutwardDist!
+          unit.stage1Sleeve.position.y = stage1Tip - 0.130;
+          unit.stage2Shaft.position.y = totalOutwardDist - 0.175;
 
-    rig.seatPos.lerp(rig.passengerSeatBasePos, resetLerp);
-    rig.seatRot.x += (0 - rig.seatRot.x) * resetLerp;
-    rig.seatRot.y += (0 - rig.seatRot.y) * resetLerp;
-    rig.seatRot.z += (0 - rig.seatRot.z) * resetLerp;
-    rig.passengerSeatGroup.position.copy(rig.seatPos);
-    rig.passengerSeatGroup.rotation.copy(rig.seatRot);
-  }
+          // Move the wheel's original 3-eared knock-off spinner outward along the axle (local X) by totalOutwardDist
+          unit.spinnerHeadGroup.position.x = unit.sideSign * totalOutwardDist;
 
-  // Update compressed-air vapour burst particles from the twin floor cylinders
-  // Physically constrained by:
-  //  1) The rising leather seat cushion underside (deflects around the cushion perimeter, never passes through the seat)
-  //  2) The solid enclosed passenger cabin walls (left door interior card + closed window glass at x <= 0.455m,
-  //     center transmission tunnel at x >= 0.075m, front footwell bulkhead, rear bench, and roof surround)
-  // so pneumatic vapour can ONLY escape upward through the open roof hatch (x ∈ [0.04, 0.49], z ∈ [-0.56, 0.18])!
-  const airPosAttr = rig.ejectAirPoints.geometry.getAttribute('position') as THREE.BufferAttribute;
-  const airAgeAttr = rig.ejectAirPoints.geometry.getAttribute('aAge') as THREE.BufferAttribute;
-  const airSizeAttr = rig.ejectAirPoints.geometry.getAttribute('aSize') as THREE.BufferAttribute;
-  const airSeedAttr = rig.ejectAirPoints.geometry.getAttribute('aSeed') as THREE.BufferAttribute;
-  const airRotAttr = rig.ejectAirPoints.geometry.getAttribute('aRot') as THREE.BufferAttribute;
-  const seatPos = rig.passengerSeatGroup.position;
-  // Bottom surface of the leather bucket seat cushion is ~0.18m below passengerSeatGroup origin; allow a 4cm buffer
-  const seatUndersideY = seatPos.y - 0.21;
-  const seatHalfW = 0.24;
-  const seatHalfL = 0.26;
-  let airDirty = false;
-  for (let i = 0; i < rig.ejectAirParticles.length; i++) {
-    const ap = rig.ejectAirParticles[i];
-    if (!ap.active && airBurstBudget > 0) {
-      airBurstBudget--;
-      ap.active = true;
-      ap.age = 0;
-      ap.life = 0.26 + Math.random() * 0.22;
-      const sideX = i % 2 === 0 ? -0.10 : 0.10;
-      const cylX = rig.passengerSeatBasePos.x + sideX;
-      const cylZ = rig.passengerSeatBasePos.z - 0.04;
-      // Spawn tightly at the twin floor cylinder collars (y = 0.41m), strictly below the rising seat cushion
-      const spawnY = Math.min(0.41 + Math.random() * 0.025, Math.max(0.37, seatUndersideY - 0.015));
-      ap.pos.set(
-        cylX + (Math.random() - 0.5) * 0.016,
-        spawnY,
-        cylZ + (Math.random() - 0.5) * 0.016
-      );
-      // High-velocity vertical pneumatic jet directed straight up the piston axis toward the open roof hatch
-      // (zero artificial outward X blast toward the solid door!)
-      ap.vel.set(
-        (Math.random() - 0.5) * 0.32,
-        2.65 + Math.random() * 1.85,
-        -0.38 + (Math.random() - 0.5) * 0.35
-      );
-      ap.baseSize = 0.068 + Math.random() * 0.052;
-      ap.seed = Math.random() * 100;
-      ap.rot = Math.random() * Math.PI * 2;
-    }
-    if (ap.active) {
-      airDirty = true;
-      ap.age += safeDt;
-      const t = ap.age / ap.life;
-      if (t >= 1) {
-        ap.active = false;
-        airPosAttr.setXYZ(i, 0, -10, 0);
-        airAgeAttr.setX(i, 1);
-      } else {
-        // Pneumatic air drag + upward chimney draft through the open roof hatch
-        ap.vel.multiplyScalar(Math.pow(0.22, safeDt));
-        ap.vel.y += 0.85 * safeDt;
-        ap.rot += (i % 2 === 0 ? 2.1 : -2.1) * safeDt;
-        ap.pos.addScaledVector(ap.vel, safeDt);
-
-        // 1. Physical collision & deflection against the rising seat cushion underside
-        const dxSeat = ap.pos.x - seatPos.x;
-        const dzSeat = ap.pos.z - (seatPos.z + 0.01);
-        if (
-          Math.abs(dxSeat) < seatHalfW &&
-          Math.abs(dzSeat) < seatHalfL &&
-          ap.pos.y > seatUndersideY &&
-          ap.pos.y < seatPos.y + 0.30
-        ) {
-          ap.pos.y = seatUndersideY;
-          const upSpeed = Math.max(0, ap.vel.y);
-          ap.vel.y = Math.min(ap.vel.y, 0.35);
-          // Deflect predominantly fore/aft and inboard (away from the close left door panel) so vapour vents up behind/around the seat
-          const pushX = dxSeat >= 0 ? Math.min(0.28, dxSeat * 1.4) : -0.55;
-          const pushZ = dzSeat >= 0 ? 0.55 : -0.65;
-          ap.vel.x += pushX * (upSpeed * 0.55 + 0.25);
-          ap.vel.z += pushZ * (upSpeed * 0.65 + 0.30);
+          // Spin the entire telescoping shaft & knock-off spinner around the wheel axle (local X)
+          unit.spinGroup.rotation.x = -rig.tyreSlasherSpin;
         }
 
-        // 2. Solid Cabin Enclosure Collisions (Left Door Panel + Closed Window Glass, Center Tunnel, Footwell & Rear Bulkhead)
-        // Below the roof hatch opening (y < 1.32m), the passenger cabin is a sealed solid enclosure
-        if (ap.pos.y < 1.34) {
-          // Left passenger door inner leather card (x = 0.601m) & closed door window glass (x = 0.562m):
-          // Account for sprite world radius (~0.09m) by clamping strictly at x <= 0.455m and redirecting flow upward!
-          const maxCabinX = ap.pos.y < 0.88 ? 0.465 : 0.450;
-          if (ap.pos.x > maxCabinX) {
-            ap.pos.x = maxCabinX;
-            const hitSpeedX = Math.max(0, ap.vel.x);
-            ap.vel.x = -hitSpeedX * 0.25;
-            ap.vel.y += hitSpeedX * 0.65; // Wall boundary layer redirects pneumatic jet upward toward the open roof hatch
-          }
-          // Center transmission tunnel & armrest console (x >= 0.080m)
-          if (ap.pos.x < 0.080) {
-            ap.pos.x = 0.080;
-            if (ap.vel.x < 0) ap.vel.x = -ap.vel.x * 0.25;
-          }
-          // Front dashboard / footwell bulkhead (z <= 0.16m) and rear seat bulkhead (z >= -0.52m)
-          if (ap.pos.z > 0.16) {
-            ap.pos.z = 0.16;
-            if (ap.vel.z > 0) ap.vel.z = -ap.vel.z * 0.25;
-          } else if (ap.pos.z < -0.52) {
-            ap.pos.z = -0.52;
-            if (ap.vel.z < 0) ap.vel.z = -ap.vel.z * 0.25;
-          }
+        // 3. Bullet-Resistant Rear Shield (rises vertically from -0.326m stowed to 0m deployed)
+        rig.shieldExtend += ((state.bulletShield ? 1 : 0) - rig.shieldExtend) * Math.min(1, safeDt * 5.5);
+        rig.bulletShieldGroup.position.y = -0.326 + rig.shieldExtend * 0.326;
+
+        // 4. Two-Stage Jet-Cockpit Compressed-Air Ejection Sequence
+        // Triggered ONLY when Ejector Switch is armed AND Red Gear-Knob Button is pressed (state.seatEjected)
+        // Stage 1 (0.00s ->): Pneumatic bolts shear and blast the flush roof panel upward & rearward to the tarmac
+        // Stage 2 (0.07s -> 0.19s): Seat accelerates up the vertical guide rails through the roof opening with compressed-air burst
+        // Stage 3 (0.19s ->): Free ballistic flight under gravity (g = 9.81 m/s²), clearing the car and impacting/bouncing/skidding on the ground
+        const triggerEjectBurst = state.seatEjected && !rig.hatchActivePrev;
+        if (triggerEjectBurst) {
+          rig.hatchTimer = 0;
+          rig.seatPhase = 'rails';
+          rig.seatPos.copy(rig.passengerSeatBasePos);
+          rig.seatVel.set(0, 0, 0);
+          rig.seatRot.set(0, 0, 0);
+          rig.seatAngVel.set(0, 0, 0);
+          rig.seatBounces = 0;
+          rig.roofPos.copy(rig.roofHatchBasePos);
+          rig.roofVel.set(0.75, 5.8, -3.2);
+          rig.roofRot.set(0, 0, 0);
+          rig.roofAngVel.set(-4.8, 1.2, -2.5);
+          rig.roofBounces = 0;
+          rig.roofSettled = false;
         }
+        rig.hatchActivePrev = state.seatEjected;
 
-        // 3. Floor pan boundary (y >= 0.35m)
-        if (ap.pos.y < 0.35) {
-          ap.pos.y = 0.35;
-          if (ap.vel.y < 0) ap.vel.y = Math.abs(ap.vel.y) * 0.25;
-        }
+        let airBurstBudget = 0;
+        if (state.seatEjected) {
+          rig.hatchTimer += safeDt;
+          const tPanel = THREE.MathUtils.clamp(rig.hatchTimer / 0.25, 0, 1);
+          rig.hatchOpen = tPanel;
+          const showCutoutTrim = tPanel > 0.015;
+          rig.outerBevelMesh.visible = showCutoutTrim;
+          rig.panelSkirtMesh.visible = showCutoutTrim;
+          rig.roofSealMesh.visible = showCutoutTrim;
+          rig.innerFlangeMesh.visible = showCutoutTrim;
 
-        airPosAttr.setXYZ(i, ap.pos.x, ap.pos.y, ap.pos.z);
-        airAgeAttr.setX(i, t);
-        airSizeAttr.setX(i, ap.baseSize);
-        airSeedAttr.setX(i, ap.seed);
-        airRotAttr.setX(i, ap.rot);
-      }
-    }
-  }
-  if (airDirty) {
-    airPosAttr.needsUpdate = true;
-    airAgeAttr.needsUpdate = true;
-    airSizeAttr.needsUpdate = true;
-    airSeedAttr.needsUpdate = true;
-    airRotAttr.needsUpdate = true;
-  }
+          // Stage 1: Ballistic roof panel flight & ground impact
+          if (!rig.roofSettled) {
+            if (rig.roofPos.y > 0.036 || rig.roofVel.y > 0) {
+              rig.roofVel.y -= 9.81 * safeDt;
+              rig.roofPos.addScaledVector(rig.roofVel, safeDt);
+              rig.roofRot.x += rig.roofAngVel.x * safeDt;
+              rig.roofRot.y += rig.roofAngVel.y * safeDt;
+              rig.roofRot.z += rig.roofAngVel.z * safeDt;
 
-  // 5A. Volumetric Smoke Screen Particle Simulation
-  const posAttr = rig.smokePoints.geometry.getAttribute('position') as THREE.BufferAttribute;
-  const ageAttr = rig.smokePoints.geometry.getAttribute('aAge') as THREE.BufferAttribute;
-  const sizeAttr = rig.smokePoints.geometry.getAttribute('aSize') as THREE.BufferAttribute;
-  const seedAttr = rig.smokePoints.geometry.getAttribute('aSeed') as THREE.BufferAttribute;
-  const rotAttr = rig.smokePoints.geometry.getAttribute('aRot') as THREE.BufferAttribute;
-
-  let smokeSpawnBudget = state.smokeScreen ? 8 : 0;
-  let smokeDirty = false;
-  for (let i = 0; i < rig.smokeParticles.length; i++) {
-    const p = rig.smokeParticles[i];
-    if (!p.active && smokeSpawnBudget > 0) {
-      smokeSpawnBudget--;
-      p.active = true;
-      p.age = 0;
-      p.life = 2.6 + Math.random() * 1.6;
-      const side = i % 2 === 0 ? -0.43 : 0.43;
-      p.pos.set(side + (Math.random() - 0.5) * 0.06, 0.295, -2.31);
-      p.vel.set(
-        (Math.random() - 0.5) * 0.65 + (side > 0 ? 0.16 : -0.16),
-        0.16 + Math.random() * 0.30,
-        -(2.6 + Math.random() * 1.6)
-      );
-      p.baseSize = 0.85 + Math.random() * 0.7;
-      p.seed = Math.random() * 100;
-      p.rot = Math.random() * Math.PI * 2;
-    }
-
-    if (p.active) {
-      smokeDirty = true;
-      p.age += safeDt;
-      const t = p.age / p.life;
-      if (t >= 1) {
-        p.active = false;
-        posAttr.setXYZ(i, 0, -10, 0);
-        ageAttr.setX(i, 1);
-      } else {
-        // Strong aerodynamic drag + ground-hugging turbulent vortex wake
-        p.vel.z *= Math.pow(0.38, safeDt);
-        p.vel.x += Math.sin(rig.time * 2.8 + p.seed + p.pos.z * 1.4) * 0.75 * safeDt;
-        p.vel.y += (0.24 - p.vel.y) * 0.65 * safeDt;
-        p.pos.addScaledVector(p.vel, safeDt);
-        if (p.pos.y < 0.16) p.pos.y = 0.16;
-
-        posAttr.setXYZ(i, p.pos.x, p.pos.y, p.pos.z);
-        ageAttr.setX(i, t);
-        sizeAttr.setX(i, p.baseSize);
-        seedAttr.setX(i, p.seed);
-        rotAttr.setX(i, p.rot);
-      }
-    }
-  }
-  if (smokeDirty) {
-    posAttr.needsUpdate = true;
-    ageAttr.needsUpdate = true;
-    sizeAttr.needsUpdate = true;
-    seedAttr.needsUpdate = true;
-    rotAttr.needsUpdate = true;
-  }
-
-  // 5B. Left Taillight Hinge & Nozzle-Anchored Viscous Filament -> Deformed Droplets -> Metaball Puddle
-  rig.oilLidOpen += ((state.oilSlick ? 1 : 0) - rig.oilLidOpen) * Math.min(1, safeDt * 7.5);
-  rig.leftOilLampPivot.rotation.x = rig.oilLidOpen * 1.32; // Lifts top amber lamp ~75° upward
-  rig.leftOilNozzle.position.z = -2.165 - rig.oilLidOpen * 0.065;
-  for (const arm of rig.leftOilArms) {
-    arm.visible = rig.oilLidOpen > 0.08;
-    arm.scale.z = Math.max(0.05, rig.oilLidOpen);
-  }
-
-  const nozzleTipZ = rig.leftOilNozzle.position.z - 0.036;
-  const isPouring = state.oilSlick && rig.oilLidOpen > 0.65;
-  // Smooth, heavy high-viscosity pump pressure wave (continuous cohesive flow, never chopped up)
-  const pumpWave = 0.5 + 0.5 * Math.sin(rig.time * 4.2) + 0.25 * Math.sin(rig.time * 9.6);
-
-  rig.oilBlobMat.uniforms.uTime.value = rig.time;
-  rig.oilFilamentMesh.position.z = nozzleTipZ + 0.008;
-  rig.oilFilamentMat.uniforms.uTime.value = rig.time;
-  rig.oilFilamentMat.uniforms.uActive.value +=
-    ((isPouring ? 1 : 0) - rig.oilFilamentMat.uniforms.uActive.value) * Math.min(1, safeDt * 9);
-  rig.oilFilamentMat.uniforms.uLength.value = 0.78 + 0.20 * Math.sin(rig.time * 4.8);
-
-  if (isPouring) {
-    rig.oilSpawnAccum += safeDt;
-    const spawnInterval = 0.0075; // High-density overlapping emission (~133 packets/sec)
-    while (rig.oilSpawnAccum >= spawnInterval) {
-      rig.oilSpawnAccum -= spawnInterval;
-      const slot = rig.oilDroplets.find((d) => !d.active);
-      if (!slot) break;
-      slot.active = true;
-      slot.age = 0;
-      slot.life = 1.35;
-      // Coherent travelling pressure pulses produce thick globs connected by stretched viscous ligaments
-      const pulse = 0.5 + 0.5 * Math.sin(rig.time * 13.5);
-      slot.radius = 0.0062 + 0.0038 * pulse;
-      slot.elongation = 5.2 + 2.8 * (1.0 - pulse);
-      const swayX = Math.sin(rig.time * 5.2) * 0.0022;
-      const swayY = Math.cos(rig.time * 6.0) * 0.0018;
-      slot.pos.set(0.6325 + swayX, 0.770 + swayY, nozzleTipZ - 0.004);
-      const jetSpeed = 1.34 + 0.10 * pumpWave;
-      slot.vel.set(
-        Math.sin(rig.time * 4.6) * 0.032,
-        0.038 + Math.cos(rig.time * 5.4) * 0.015,
-        -jetSpeed
-      );
-    }
-  }
-
-  rig.oilImpact.z += safeDt;
-
-  let oilDirty = false;
-  for (let i = 0; i < rig.oilDroplets.length; i++) {
-    const d = rig.oilDroplets[i];
-    if (d.active) {
-      oilDirty = true;
-      d.age += safeDt;
-      d.vel.y -= 3.8 * safeDt;
-      d.pos.addScaledVector(d.vel, safeDt);
-      if (d.pos.y <= 0.025 || d.age >= d.life) {
-        if (d.pos.y <= 0.025) {
-          rig.oilImpact.set(d.pos.x, d.pos.z, 0);
-          let merged = false;
-          for (const mb of rig.oilMetaballs) {
-            if (mb.active && Math.hypot(mb.x - d.pos.x, mb.z - d.pos.z) < 0.16) {
-              mb.r = Math.min(0.32, Math.hypot(mb.r, d.radius * 1.55));
-              mb.vx += (d.vel.x * 0.06 + (Math.random() - 0.5) * 0.03);
-              mb.vz -= 0.018;
-              merged = true;
-              break;
-            }
-          }
-          if (!merged) {
-            const freeMb = rig.oilMetaballs.find((m) => !m.active);
-            if (freeMb) {
-              freeMb.active = true;
-              freeMb.x = d.pos.x;
-              freeMb.z = d.pos.z;
-              freeMb.vx = (Math.random() - 0.5) * 0.06;
-              freeMb.vz = -0.055 - Math.random() * 0.04;
-              freeMb.r = 0.065 + Math.random() * 0.025;
-            }
-          }
-        }
-        d.active = false;
-        _dummyObj.position.set(0, -10, 0);
-        _dummyObj.scale.setScalar(0.0001);
-      } else {
-        _dummyObj.position.copy(d.pos);
-        _lookTarget.copy(d.pos).add(d.vel);
-        _dummyObj.lookAt(_lookTarget);
-        // High-viscosity liquid columns stretch smoothly along their parabolic trajectory and swell near impact
-        const flightProgress = THREE.MathUtils.clamp(d.age / 0.65, 0, 1);
-        const rDynamic = d.radius * THREE.MathUtils.lerp(0.95, 1.18, flightProgress);
-        const lenDynamic = d.radius * d.elongation * THREE.MathUtils.lerp(1.15, 0.78, flightProgress);
-        _dummyObj.scale.set(rDynamic, rDynamic, lenDynamic);
-      }
-      _dummyObj.updateMatrix();
-      rig.oilBlobInstanced.setMatrixAt(i, _dummyObj.matrix);
-    }
-  }
-  if (oilDirty) {
-    rig.oilBlobInstanced.instanceMatrix.needsUpdate = true;
-  }
-
-  // Slowly creeping high-viscosity damped metaballs on the ground
-  const ballUniforms = rig.oilPuddleMat.uniforms.uBalls.value as THREE.Vector4[];
-  const damp = Math.exp(-4.2 * safeDt);
-  for (let i = 0; i < rig.oilMetaballs.length; i++) {
-    const mb = rig.oilMetaballs[i];
-    if (mb.active) {
-      mb.vx *= damp;
-      mb.vz *= damp;
-      mb.x += mb.vx * safeDt;
-      mb.z += mb.vz * safeDt;
-      if (!state.oilSlick) {
-        mb.r -= 0.045 * safeDt;
-        if (mb.r <= 0.002) {
-          mb.active = false;
-          mb.r = 0;
-        }
-      }
-      ballUniforms[i].set(mb.x, mb.z, mb.r, 0);
-    } else {
-      ballUniforms[i].set(0, -10, 0, 0);
-    }
-  }
-  rig.oilPuddleMat.uniforms.uTime.value = rig.time;
-
-  // 5C. Right Taillight Hinge & 4-Sided Steel Caltrop Dispenser
-  rig.caltropLidOpen += ((state.caltrops ? 1 : 0) - rig.caltropLidOpen) * Math.min(1, safeDt * 7.5);
-  rig.rightCaltropPivot.rotation.x = -rig.caltropLidOpen * 1.65; // Flips entire right cluster ~95° down
-
-  let caltropSpawnBudget = state.caltrops && rig.caltropLidOpen > 0.65 ? 2 : 0;
-  let caltropDirty = false;
-  for (let i = 0; i < rig.caltrops.length; i++) {
-    const c = rig.caltrops[i];
-    if (!c.active && caltropSpawnBudget > 0) {
-      caltropSpawnBudget--;
-      c.active = true;
-      c.settled = false;
-      c.bounces = 0;
-      c.age = 0;
-      c.life = 6.0 + Math.random() * 2.5;
-      // Alternate between the twin launch chutes (-0.646 outboard, -0.619 inboard) with divergent fan angles
-      const isInboardChute = i % 2 === 0;
-      const chuteX = isInboardChute ? -0.619 : -0.646;
-      c.pos.set(
-        chuteX + (Math.random() - 0.5) * 0.010,
-        0.675 + (Math.random() - 0.5) * 0.008,
-        -2.185
-      );
-      // Fan horizontally across the road lane behind the car (slight inboard bias toward car centerline + wide lateral cone)
-      const chuteBiasX = isInboardChute ? 0.36 : -0.22;
-      const fanSpreadX = (Math.random() - 0.44) * 1.65;
-      const launchSpeedZ = -(1.55 + Math.random() * 1.65);
-      c.vel.set(
-        chuteBiasX + fanSpreadX,
-        0.18 + Math.random() * 0.38,
-        launchSpeedZ
-      );
-      c.rot.set(
-        Math.random() * Math.PI * 2,
-        Math.random() * Math.PI * 2,
-        Math.random() * Math.PI * 2
-      );
-      c.angVel.set(
-        (Math.random() - 0.5) * 18,
-        (Math.random() - 0.5) * 18,
-        (Math.random() - 0.5) * 18
-      );
-      c.restRotY = Math.random() * Math.PI * 2;
-    }
-
-    if (c.active) {
-      caltropDirty = true;
-      c.age += safeDt;
-      if (c.age >= c.life && !state.caltrops) {
-        c.active = false;
-      } else if (!c.settled) {
-        if (c.pos.y > 0.030) {
-          // Ballistic flight + steel-on-tarmac bouncing
-          c.vel.y -= 7.4 * safeDt;
-          c.pos.addScaledVector(c.vel, safeDt);
-          c.rot.x += c.angVel.x * safeDt;
-          c.rot.y += c.angVel.y * safeDt;
-          c.rot.z += c.angVel.z * safeDt;
-
-          if (c.pos.y <= 0.029) {
-            c.pos.y = 0.029;
-            c.bounces++;
-            // Hardened 4-spike steel tetrahedron hitting asphalt: off-axis spike contact imparts realistic lateral ricochet
-            if (Math.abs(c.vel.y) > 0.32 && c.bounces <= 4) {
-              const restitution = THREE.MathUtils.clamp(0.44 - c.bounces * 0.07, 0.18, 0.44);
-              const impactEnergy = Math.min(1.2, Math.abs(c.vel.y));
-              c.vel.y = Math.abs(c.vel.y) * restitution;
-              // Spike tip deflection scatters velocity laterally while preserving forward/rearward momentum
-              c.vel.x = c.vel.x * 0.80 + (Math.random() - 0.47) * 0.58 * impactEnergy;
-              c.vel.z = c.vel.z * 0.78 + (Math.random() - 0.5) * 0.38 * impactEnergy;
-              c.angVel.set(
-                (Math.random() - 0.5) * 16 * restitution,
-                (Math.random() - 0.5) * 20 * restitution,
-                (Math.random() - 0.5) * 16 * restitution
-              );
+              if (rig.roofPos.y <= 0.035) {
+                rig.roofPos.y = 0.035;
+                rig.roofBounces++;
+                if (Math.abs(rig.roofVel.y) > 0.7 && rig.roofBounces <= 2) {
+                  rig.roofVel.y = Math.abs(rig.roofVel.y) * 0.28;
+                  rig.roofVel.x *= 0.55;
+                  rig.roofVel.z *= 0.55;
+                  rig.roofAngVel.multiplyScalar(0.42);
+                } else {
+                  rig.roofVel.y = 0;
+                }
+              }
             } else {
-              // Transition to ground skitter / sliding phase before coming to rest
-              c.vel.y = 0;
-              c.restRotY = c.rot.y;
+              rig.roofPos.y = 0.035;
+              const skid = Math.exp(-6.0 * safeDt);
+              rig.roofVel.x *= skid;
+              rig.roofVel.z *= skid;
+              rig.roofPos.x += rig.roofVel.x * safeDt;
+              rig.roofPos.z += rig.roofVel.z * safeDt;
+              const flatX = Math.round(rig.roofRot.x / Math.PI) * Math.PI;
+              rig.roofRot.x += (flatX - rig.roofRot.x) * Math.min(1, safeDt * 12);
+              rig.roofRot.z += (0 - rig.roofRot.z) * Math.min(1, safeDt * 12);
+              if (rig.roofVel.x * rig.roofVel.x + rig.roofVel.z * rig.roofVel.z < 0.002) {
+                rig.roofSettled = true;
+              }
             }
           }
+          rig.roofHatchGroup.visible = true;
+          rig.roofHatchGroup.position.copy(rig.roofPos);
+          rig.roofHatchGroup.rotation.copy(rig.roofRot);
+
+          // Stage 2 & 3: Seat rail launch -> free ballistic flight -> tarmac impact & bounce
+          if (rig.seatPhase === 'rails') {
+            const tRailRaw = THREE.MathUtils.clamp((rig.hatchTimer - 0.07) / 0.12, 0, 1);
+            const railEase = tRailRaw * tRailRaw * (2 - tRailRaw);
+            rig.seatEjectProgress = railEase;
+            rig.seatPos.set(
+              rig.passengerSeatBasePos.x - 0.02 * railEase,
+              rig.passengerSeatBasePos.y + 1.05 * railEase,
+              rig.passengerSeatBasePos.z - 0.18 * railEase
+            );
+            rig.seatRot.set(-0.14 * railEase, 0, 0);
+            if (rig.hatchTimer >= 0.19) {
+              rig.seatPhase = 'airborne';
+              rig.seatVel.set(1.95, 7.2, -1.35);
+              rig.seatAngVel.set(-2.4, 0.85, -1.75);
+            }
+          } else if (rig.seatPhase === 'airborne') {
+            rig.seatEjectProgress = 1;
+            rig.seatVel.y -= 9.81 * safeDt;
+            rig.seatPos.addScaledVector(rig.seatVel, safeDt);
+            rig.seatRot.x += rig.seatAngVel.x * safeDt;
+            rig.seatRot.y += rig.seatAngVel.y * safeDt;
+            rig.seatRot.z += rig.seatAngVel.z * safeDt;
+
+            const seatGroundY = 0.25;
+            if (rig.seatPos.y <= seatGroundY) {
+              rig.seatPos.y = seatGroundY;
+              rig.seatBounces++;
+              if (Math.abs(rig.seatVel.y) > 0.75 && rig.seatBounces <= 3) {
+                const restitution = Math.max(0.16, 0.28 - rig.seatBounces * 0.04);
+                rig.seatVel.y = Math.abs(rig.seatVel.y) * restitution;
+                rig.seatVel.x *= 0.56;
+                rig.seatVel.z *= 0.56;
+                rig.seatAngVel.multiplyScalar(0.45);
+              } else {
+                rig.seatVel.y = 0;
+                rig.seatPhase = 'skid';
+              }
+            }
+          } else if (rig.seatPhase === 'skid') {
+            rig.seatPos.y = 0.25;
+            const skid = Math.exp(-5.5 * safeDt);
+            rig.seatVel.x *= skid;
+            rig.seatVel.z *= skid;
+            rig.seatPos.x += rig.seatVel.x * safeDt;
+            rig.seatPos.z += rig.seatVel.z * safeDt;
+            const settleLerp = Math.min(1, safeDt * 10);
+            const targetRestX = Math.round(rig.seatRot.x / (Math.PI * 0.5)) * (Math.PI * 0.5);
+            rig.seatRot.x += (targetRestX - rig.seatRot.x) * settleLerp;
+            rig.seatRot.z += (0 - rig.seatRot.z) * settleLerp;
+            if (rig.seatVel.x * rig.seatVel.x + rig.seatVel.z * rig.seatVel.z < 0.002) {
+              rig.seatPhase = 'settled';
+            }
+          }
+
+          rig.passengerSeatGroup.position.copy(rig.seatPos);
+          rig.passengerSeatGroup.rotation.copy(rig.seatRot);
+
+          if (rig.hatchTimer >= 0.04 && rig.hatchTimer <= 0.20) {
+            airBurstBudget = 16; // Immediate high-pressure valve release flash right as launch begins
+          } else if (rig.hatchTimer > 0.20 && rig.hatchTimer <= 0.38) {
+            airBurstBudget = 7;  // Trailing pneumatic exhaust plume as pistons clear the floor cylinders
+          }
         } else {
-          // Ground skitter phase: caltrop slides and rocks to a stop on its 3 base spikes with 1 spike pointing straight up
-          c.pos.y = 0.029;
-          const slideFriction = Math.exp(-6.5 * safeDt);
-          c.vel.x *= slideFriction;
-          c.vel.z *= slideFriction;
-          c.pos.x += c.vel.x * safeDt;
-          c.pos.z += c.vel.z * safeDt;
+          // Smoothly retract seat and reseat roof panel 100% flush & seamless when reset
+          rig.hatchTimer = 0;
+          rig.seatPhase = 'stowed';
+          const resetLerp = Math.min(1, safeDt * 7.5);
+          rig.hatchOpen += (0 - rig.hatchOpen) * resetLerp;
+          const showCutoutTrim = rig.hatchOpen > 0.015;
+          rig.outerBevelMesh.visible = showCutoutTrim;
+          rig.panelSkirtMesh.visible = showCutoutTrim;
+          rig.roofSealMesh.visible = showCutoutTrim;
+          rig.innerFlangeMesh.visible = showCutoutTrim;
+          rig.seatEjectProgress += (0 - rig.seatEjectProgress) * resetLerp;
 
-          const speedSq = c.vel.x * c.vel.x + c.vel.z * c.vel.z;
-          const settleLerp = Math.min(1, safeDt * 14);
-          c.rot.x += (0 - c.rot.x) * settleLerp;
-          c.rot.z += (0 - c.rot.z) * settleLerp;
-          c.restRotY += c.angVel.y * safeDt * 0.25;
-          c.angVel.y *= slideFriction;
-          c.rot.y = c.restRotY;
+          rig.roofPos.lerp(rig.roofHatchBasePos, resetLerp);
+          rig.roofRot.x += (0 - rig.roofRot.x) * resetLerp;
+          rig.roofRot.y += (0 - rig.roofRot.y) * resetLerp;
+          rig.roofRot.z += (0 - rig.roofRot.z) * resetLerp;
+          rig.roofHatchGroup.visible = true;
+          rig.roofHatchGroup.position.copy(rig.roofPos);
+          rig.roofHatchGroup.rotation.copy(rig.roofRot);
 
-          if (speedSq < 0.0012 && Math.abs(c.rot.x) < 0.02 && Math.abs(c.rot.z) < 0.02) {
-            c.rot.set(0, c.restRotY, 0);
-            c.settled = true;
+          rig.seatPos.lerp(rig.passengerSeatBasePos, resetLerp);
+          rig.seatRot.x += (0 - rig.seatRot.x) * resetLerp;
+          rig.seatRot.y += (0 - rig.seatRot.y) * resetLerp;
+          rig.seatRot.z += (0 - rig.seatRot.z) * resetLerp;
+          rig.passengerSeatGroup.position.copy(rig.seatPos);
+          rig.passengerSeatGroup.rotation.copy(rig.seatRot);
+        }
+
+        // Update compressed-air vapour burst particles from the twin floor cylinders
+        // Physically constrained by:
+        //  1) The rising leather seat cushion underside (deflects around the cushion perimeter, never passes through the seat)
+        //  2) The solid enclosed passenger cabin walls (left door interior card + closed window glass at x <= 0.455m,
+        //     center transmission tunnel at x >= 0.075m, front footwell bulkhead, rear bench, and roof surround)
+        // so pneumatic vapour can ONLY escape upward through the open roof hatch (x ∈ [0.04, 0.49], z ∈ [-0.56, 0.18])!
+        const airPosAttr = rig.ejectAirPoints.geometry.getAttribute('position') as THREE.BufferAttribute;
+        const airAgeAttr = rig.ejectAirPoints.geometry.getAttribute('aAge') as THREE.BufferAttribute;
+        const airSizeAttr = rig.ejectAirPoints.geometry.getAttribute('aSize') as THREE.BufferAttribute;
+        const airSeedAttr = rig.ejectAirPoints.geometry.getAttribute('aSeed') as THREE.BufferAttribute;
+        const airRotAttr = rig.ejectAirPoints.geometry.getAttribute('aRot') as THREE.BufferAttribute;
+        const seatPos = rig.passengerSeatGroup.position;
+        // Bottom surface of the leather bucket seat cushion is ~0.18m below passengerSeatGroup origin; allow a 4cm buffer
+        const seatUndersideY = seatPos.y - 0.21;
+        const seatHalfW = 0.24;
+        const seatHalfL = 0.26;
+        let airDirty = false;
+        for (let i = 0; i < rig.ejectAirParticles.length; i++) {
+          const ap = rig.ejectAirParticles[i];
+          if (!ap.active && airBurstBudget > 0) {
+            airBurstBudget--;
+            ap.active = true;
+            ap.age = 0;
+            ap.life = 0.26 + Math.random() * 0.22;
+            const sideX = i % 2 === 0 ? -0.10 : 0.10;
+            const cylX = rig.passengerSeatBasePos.x + sideX;
+            const cylZ = rig.passengerSeatBasePos.z - 0.04;
+            // Spawn tightly at the twin floor cylinder collars (y = 0.41m), strictly below the rising seat cushion
+            const spawnY = Math.min(0.41 + Math.random() * 0.025, Math.max(0.37, seatUndersideY - 0.015));
+            ap.pos.set(
+              cylX + (Math.random() - 0.5) * 0.016,
+              spawnY,
+              cylZ + (Math.random() - 0.5) * 0.016
+            );
+            // High-velocity vertical pneumatic jet directed straight up the piston axis toward the open roof hatch
+            // (zero artificial outward X blast toward the solid door!)
+            ap.vel.set(
+              (Math.random() - 0.5) * 0.32,
+              2.65 + Math.random() * 1.85,
+              -0.38 + (Math.random() - 0.5) * 0.35
+            );
+            ap.baseSize = 0.068 + Math.random() * 0.052;
+            ap.seed = Math.random() * 100;
+            ap.rot = Math.random() * Math.PI * 2;
+          }
+          if (ap.active) {
+            airDirty = true;
+            ap.age += safeDt;
+            const t = ap.age / ap.life;
+            if (t >= 1) {
+              ap.active = false;
+              airPosAttr.setXYZ(i, 0, -10, 0);
+              airAgeAttr.setX(i, 1);
+            } else {
+              // Pneumatic air drag + upward chimney draft through the open roof hatch
+              ap.vel.multiplyScalar(Math.pow(0.22, safeDt));
+              ap.vel.y += 0.85 * safeDt;
+              ap.rot += (i % 2 === 0 ? 2.1 : -2.1) * safeDt;
+              ap.pos.addScaledVector(ap.vel, safeDt);
+
+              // 1. Physical collision & deflection against the rising seat cushion underside
+              const dxSeat = ap.pos.x - seatPos.x;
+              const dzSeat = ap.pos.z - (seatPos.z + 0.01);
+              if (
+                Math.abs(dxSeat) < seatHalfW &&
+                Math.abs(dzSeat) < seatHalfL &&
+                ap.pos.y > seatUndersideY &&
+                ap.pos.y < seatPos.y + 0.30
+              ) {
+                ap.pos.y = seatUndersideY;
+                const upSpeed = Math.max(0, ap.vel.y);
+                ap.vel.y = Math.min(ap.vel.y, 0.35);
+                // Deflect predominantly fore/aft and inboard (away from the close left door panel) so vapour vents up behind/around the seat
+                const pushX = dxSeat >= 0 ? Math.min(0.28, dxSeat * 1.4) : -0.55;
+                const pushZ = dzSeat >= 0 ? 0.55 : -0.65;
+                ap.vel.x += pushX * (upSpeed * 0.55 + 0.25);
+                ap.vel.z += pushZ * (upSpeed * 0.65 + 0.30);
+              }
+
+              // 2. Solid Cabin Enclosure Collisions (Left Door Panel + Closed Window Glass, Center Tunnel, Footwell & Rear Bulkhead)
+              // Below the roof hatch opening (y < 1.32m), the passenger cabin is a sealed solid enclosure
+              if (ap.pos.y < 1.34) {
+                // Left passenger door inner leather card (x = 0.601m) & closed door window glass (x = 0.562m):
+                // Account for sprite world radius (~0.09m) by clamping strictly at x <= 0.455m and redirecting flow upward!
+                const maxCabinX = ap.pos.y < 0.88 ? 0.465 : 0.450;
+                if (ap.pos.x > maxCabinX) {
+                  ap.pos.x = maxCabinX;
+                  const hitSpeedX = Math.max(0, ap.vel.x);
+                  ap.vel.x = -hitSpeedX * 0.25;
+                  ap.vel.y += hitSpeedX * 0.65; // Wall boundary layer redirects pneumatic jet upward toward the open roof hatch
+                }
+                // Center transmission tunnel & armrest console (x >= 0.080m)
+                if (ap.pos.x < 0.080) {
+                  ap.pos.x = 0.080;
+                  if (ap.vel.x < 0) ap.vel.x = -ap.vel.x * 0.25;
+                }
+                // Front dashboard / footwell bulkhead (z <= 0.16m) and rear seat bulkhead (z >= -0.52m)
+                if (ap.pos.z > 0.16) {
+                  ap.pos.z = 0.16;
+                  if (ap.vel.z > 0) ap.vel.z = -ap.vel.z * 0.25;
+                } else if (ap.pos.z < -0.52) {
+                  ap.pos.z = -0.52;
+                  if (ap.vel.z < 0) ap.vel.z = -ap.vel.z * 0.25;
+                }
+              }
+
+              // 3. Floor pan boundary (y >= 0.35m)
+              if (ap.pos.y < 0.35) {
+                ap.pos.y = 0.35;
+                if (ap.vel.y < 0) ap.vel.y = Math.abs(ap.vel.y) * 0.25;
+              }
+
+              airPosAttr.setXYZ(i, ap.pos.x, ap.pos.y, ap.pos.z);
+              airAgeAttr.setX(i, t);
+              airSizeAttr.setX(i, ap.baseSize);
+              airSeedAttr.setX(i, ap.seed);
+              airRotAttr.setX(i, ap.rot);
+            }
           }
         }
+        if (airDirty) {
+          airPosAttr.needsUpdate = true;
+          airAgeAttr.needsUpdate = true;
+          airSizeAttr.needsUpdate = true;
+          airSeedAttr.needsUpdate = true;
+          airRotAttr.needsUpdate = true;
+        }
+
+        // 5A. Volumetric Smoke Screen Particle Simulation
+        const posAttr = rig.smokePoints.geometry.getAttribute('position') as THREE.BufferAttribute;
+        const ageAttr = rig.smokePoints.geometry.getAttribute('aAge') as THREE.BufferAttribute;
+        const sizeAttr = rig.smokePoints.geometry.getAttribute('aSize') as THREE.BufferAttribute;
+        const seedAttr = rig.smokePoints.geometry.getAttribute('aSeed') as THREE.BufferAttribute;
+        const rotAttr = rig.smokePoints.geometry.getAttribute('aRot') as THREE.BufferAttribute;
+
+        let smokeSpawnBudget = state.smokeScreen ? 8 : 0;
+        let smokeDirty = false;
+        for (let i = 0; i < rig.smokeParticles.length; i++) {
+          const p = rig.smokeParticles[i];
+          if (!p.active && smokeSpawnBudget > 0) {
+            smokeSpawnBudget--;
+            p.active = true;
+            p.age = 0;
+            p.life = 2.6 + Math.random() * 1.6;
+            const side = i % 2 === 0 ? -0.43 : 0.43;
+            p.pos.set(side + (Math.random() - 0.5) * 0.06, 0.295, -2.31);
+            p.vel.set(
+              (Math.random() - 0.5) * 0.65 + (side > 0 ? 0.16 : -0.16),
+              0.16 + Math.random() * 0.30,
+              -(2.6 + Math.random() * 1.6)
+            );
+            p.baseSize = 0.85 + Math.random() * 0.7;
+            p.seed = Math.random() * 100;
+            p.rot = Math.random() * Math.PI * 2;
+          }
+
+          if (p.active) {
+            smokeDirty = true;
+            p.age += safeDt;
+            const t = p.age / p.life;
+            if (t >= 1) {
+              p.active = false;
+              posAttr.setXYZ(i, 0, -10, 0);
+              ageAttr.setX(i, 1);
+            } else {
+              // Strong aerodynamic drag + ground-hugging turbulent vortex wake
+              p.vel.z *= Math.pow(0.38, safeDt);
+              p.vel.x += Math.sin(rig.time * 2.8 + p.seed + p.pos.z * 1.4) * 0.75 * safeDt;
+              p.vel.y += (0.24 - p.vel.y) * 0.65 * safeDt;
+              p.pos.addScaledVector(p.vel, safeDt);
+              if (p.pos.y < 0.16) p.pos.y = 0.16;
+
+              posAttr.setXYZ(i, p.pos.x, p.pos.y, p.pos.z);
+              ageAttr.setX(i, t);
+              sizeAttr.setX(i, p.baseSize);
+              seedAttr.setX(i, p.seed);
+              rotAttr.setX(i, p.rot);
+            }
+          }
+        }
+        if (smokeDirty) {
+          posAttr.needsUpdate = true;
+          ageAttr.needsUpdate = true;
+          sizeAttr.needsUpdate = true;
+          seedAttr.needsUpdate = true;
+          rotAttr.needsUpdate = true;
+        }
+
+        // 5B. Left Taillight Hinge & Nozzle-Anchored Viscous Filament -> Deformed Droplets -> Metaball Puddle
+        rig.oilLidOpen += ((state.oilSlick ? 1 : 0) - rig.oilLidOpen) * Math.min(1, safeDt * 7.5);
+        rig.leftOilLampPivot.rotation.x = rig.oilLidOpen * 1.32; // Lifts top amber lamp ~75° upward
+        rig.leftOilNozzle.position.z = -2.165 - rig.oilLidOpen * 0.065;
+        for (const arm of rig.leftOilArms) {
+          arm.visible = rig.oilLidOpen > 0.08;
+          arm.scale.z = Math.max(0.05, rig.oilLidOpen);
+        }
+
+        const nozzleTipZ = rig.leftOilNozzle.position.z - 0.036;
+        const isPouring = state.oilSlick && rig.oilLidOpen > 0.65;
+        // Smooth, heavy high-viscosity pump pressure wave (continuous cohesive flow, never chopped up)
+        const pumpWave = 0.5 + 0.5 * Math.sin(rig.time * 4.2) + 0.25 * Math.sin(rig.time * 9.6);
+
+        rig.oilBlobMat.uniforms.uTime.value = rig.time;
+        rig.oilFilamentMesh.position.z = nozzleTipZ + 0.008;
+        rig.oilFilamentMat.uniforms.uTime.value = rig.time;
+        rig.oilFilamentMat.uniforms.uActive.value +=
+          ((isPouring ? 1 : 0) - rig.oilFilamentMat.uniforms.uActive.value) * Math.min(1, safeDt * 9);
+        rig.oilFilamentMat.uniforms.uLength.value = 0.78 + 0.20 * Math.sin(rig.time * 4.8);
+
+        if (isPouring) {
+          rig.oilSpawnAccum += safeDt;
+          const spawnInterval = 0.0075; // High-density overlapping emission (~133 packets/sec)
+          while (rig.oilSpawnAccum >= spawnInterval) {
+            rig.oilSpawnAccum -= spawnInterval;
+            const slot = rig.oilDroplets.find((d) => !d.active);
+            if (!slot) break;
+            slot.active = true;
+            slot.age = 0;
+            slot.life = 1.35;
+            // Coherent travelling pressure pulses produce thick globs connected by stretched viscous ligaments
+            const pulse = 0.5 + 0.5 * Math.sin(rig.time * 13.5);
+            slot.radius = 0.0062 + 0.0038 * pulse;
+            slot.elongation = 5.2 + 2.8 * (1.0 - pulse);
+            const swayX = Math.sin(rig.time * 5.2) * 0.0022;
+            const swayY = Math.cos(rig.time * 6.0) * 0.0018;
+            slot.pos.set(0.6325 + swayX, 0.770 + swayY, nozzleTipZ - 0.004);
+            const jetSpeed = 1.34 + 0.10 * pumpWave;
+            slot.vel.set(
+              Math.sin(rig.time * 4.6) * 0.032,
+              0.038 + Math.cos(rig.time * 5.4) * 0.015,
+              -jetSpeed
+            );
+          }
+        }
+
+        rig.oilImpact.z += safeDt;
+
+        let oilDirty = false;
+        for (let i = 0; i < rig.oilDroplets.length; i++) {
+          const d = rig.oilDroplets[i];
+          if (d.active) {
+            oilDirty = true;
+            d.age += safeDt;
+            d.vel.y -= 3.8 * safeDt;
+            d.pos.addScaledVector(d.vel, safeDt);
+            if (d.pos.y <= 0.025 || d.age >= d.life) {
+              if (d.pos.y <= 0.025) {
+                rig.oilImpact.set(d.pos.x, d.pos.z, 0);
+                let merged = false;
+                for (const mb of rig.oilMetaballs) {
+                  if (mb.active && Math.hypot(mb.x - d.pos.x, mb.z - d.pos.z) < 0.16) {
+                    mb.r = Math.min(0.32, Math.hypot(mb.r, d.radius * 1.55));
+                    mb.vx += (d.vel.x * 0.06 + (Math.random() - 0.5) * 0.03);
+                    mb.vz -= 0.018;
+                    merged = true;
+                    break;
+                  }
+                }
+                if (!merged) {
+                  const freeMb = rig.oilMetaballs.find((m) => !m.active);
+                  if (freeMb) {
+                    freeMb.active = true;
+                    freeMb.x = d.pos.x;
+                    freeMb.z = d.pos.z;
+                    freeMb.vx = (Math.random() - 0.5) * 0.06;
+                    freeMb.vz = -0.055 - Math.random() * 0.04;
+                    freeMb.r = 0.065 + Math.random() * 0.025;
+                  }
+                }
+              }
+              d.active = false;
+              _dummyObj.position.set(0, -10, 0);
+              _dummyObj.scale.setScalar(0.0001);
+            } else {
+              _dummyObj.position.copy(d.pos);
+              _lookTarget.copy(d.pos).add(d.vel);
+              _dummyObj.lookAt(_lookTarget);
+              // High-viscosity liquid columns stretch smoothly along their parabolic trajectory and swell near impact
+              const flightProgress = THREE.MathUtils.clamp(d.age / 0.65, 0, 1);
+              const rDynamic = d.radius * THREE.MathUtils.lerp(0.95, 1.18, flightProgress);
+              const lenDynamic = d.radius * d.elongation * THREE.MathUtils.lerp(1.15, 0.78, flightProgress);
+              _dummyObj.scale.set(rDynamic, rDynamic, lenDynamic);
+            }
+            _dummyObj.updateMatrix();
+            rig.oilBlobInstanced.setMatrixAt(i, _dummyObj.matrix);
+          }
+        }
+        if (oilDirty) {
+          rig.oilBlobInstanced.instanceMatrix.needsUpdate = true;
+        }
+
+        // Slowly creeping high-viscosity damped metaballs on the ground
+        const ballUniforms = rig.oilPuddleMat.uniforms.uBalls.value as THREE.Vector4[];
+        const damp = Math.exp(-4.2 * safeDt);
+        for (let i = 0; i < rig.oilMetaballs.length; i++) {
+          const mb = rig.oilMetaballs[i];
+          if (mb.active) {
+            mb.vx *= damp;
+            mb.vz *= damp;
+            mb.x += mb.vx * safeDt;
+            mb.z += mb.vz * safeDt;
+            if (!state.oilSlick) {
+              mb.r -= 0.045 * safeDt;
+              if (mb.r <= 0.002) {
+                mb.active = false;
+                mb.r = 0;
+              }
+            }
+            ballUniforms[i].set(mb.x, mb.z, mb.r, 0);
+          } else {
+            ballUniforms[i].set(0, -10, 0, 0);
+          }
+        }
+        rig.oilPuddleMat.uniforms.uTime.value = rig.time;
+
+        // 5C. Right Taillight Hinge & 4-Sided Steel Caltrop Dispenser
+        rig.caltropLidOpen += ((state.caltrops ? 1 : 0) - rig.caltropLidOpen) * Math.min(1, safeDt * 7.5);
+        rig.rightCaltropPivot.rotation.x = -rig.caltropLidOpen * 1.65; // Flips entire right cluster ~95° down
+
+        let caltropSpawnBudget = state.caltrops && rig.caltropLidOpen > 0.65 ? 2 : 0;
+        let caltropDirty = false;
+        for (let i = 0; i < rig.caltrops.length; i++) {
+          const c = rig.caltrops[i];
+          if (!c.active && caltropSpawnBudget > 0) {
+            caltropSpawnBudget--;
+            c.active = true;
+            c.settled = false;
+            c.bounces = 0;
+            c.age = 0;
+            c.life = 6.0 + Math.random() * 2.5;
+            // Alternate between the twin launch chutes (-0.646 outboard, -0.619 inboard) with divergent fan angles
+            const isInboardChute = i % 2 === 0;
+            const chuteX = isInboardChute ? -0.619 : -0.646;
+            c.pos.set(
+              chuteX + (Math.random() - 0.5) * 0.010,
+              0.675 + (Math.random() - 0.5) * 0.008,
+              -2.185
+            );
+            // Fan horizontally across the road lane behind the car (slight inboard bias toward car centerline + wide lateral cone)
+            const chuteBiasX = isInboardChute ? 0.36 : -0.22;
+            const fanSpreadX = (Math.random() - 0.44) * 1.65;
+            const launchSpeedZ = -(1.55 + Math.random() * 1.65);
+            c.vel.set(
+              chuteBiasX + fanSpreadX,
+              0.18 + Math.random() * 0.38,
+              launchSpeedZ
+            );
+            c.rot.set(
+              Math.random() * Math.PI * 2,
+              Math.random() * Math.PI * 2,
+              Math.random() * Math.PI * 2
+            );
+            c.angVel.set(
+              (Math.random() - 0.5) * 18,
+              (Math.random() - 0.5) * 18,
+              (Math.random() - 0.5) * 18
+            );
+            c.restRotY = Math.random() * Math.PI * 2;
+          }
+
+          if (c.active) {
+            caltropDirty = true;
+            c.age += safeDt;
+            if (c.age >= c.life && !state.caltrops) {
+              c.active = false;
+            } else if (!c.settled) {
+              if (c.pos.y > 0.030) {
+                // Ballistic flight + steel-on-tarmac bouncing
+                c.vel.y -= 7.4 * safeDt;
+                c.pos.addScaledVector(c.vel, safeDt);
+                c.rot.x += c.angVel.x * safeDt;
+                c.rot.y += c.angVel.y * safeDt;
+                c.rot.z += c.angVel.z * safeDt;
+
+                if (c.pos.y <= 0.029) {
+                  c.pos.y = 0.029;
+                  c.bounces++;
+                  // Hardened 4-spike steel tetrahedron hitting asphalt: off-axis spike contact imparts realistic lateral ricochet
+                  if (Math.abs(c.vel.y) > 0.32 && c.bounces <= 4) {
+                    const restitution = THREE.MathUtils.clamp(0.44 - c.bounces * 0.07, 0.18, 0.44);
+                    const impactEnergy = Math.min(1.2, Math.abs(c.vel.y));
+                    c.vel.y = Math.abs(c.vel.y) * restitution;
+                    // Spike tip deflection scatters velocity laterally while preserving forward/rearward momentum
+                    c.vel.x = c.vel.x * 0.80 + (Math.random() - 0.47) * 0.58 * impactEnergy;
+                    c.vel.z = c.vel.z * 0.78 + (Math.random() - 0.5) * 0.38 * impactEnergy;
+                    c.angVel.set(
+                      (Math.random() - 0.5) * 16 * restitution,
+                      (Math.random() - 0.5) * 20 * restitution,
+                      (Math.random() - 0.5) * 16 * restitution
+                    );
+                  } else {
+                    // Transition to ground skitter / sliding phase before coming to rest
+                    c.vel.y = 0;
+                    c.restRotY = c.rot.y;
+                  }
+                }
+              } else {
+                // Ground skitter phase: caltrop slides and rocks to a stop on its 3 base spikes with 1 spike pointing straight up
+                c.pos.y = 0.029;
+                const slideFriction = Math.exp(-6.5 * safeDt);
+                c.vel.x *= slideFriction;
+                c.vel.z *= slideFriction;
+                c.pos.x += c.vel.x * safeDt;
+                c.pos.z += c.vel.z * safeDt;
+
+                const speedSq = c.vel.x * c.vel.x + c.vel.z * c.vel.z;
+                const settleLerp = Math.min(1, safeDt * 14);
+                c.rot.x += (0 - c.rot.x) * settleLerp;
+                c.rot.z += (0 - c.rot.z) * settleLerp;
+                c.restRotY += c.angVel.y * safeDt * 0.25;
+                c.angVel.y *= slideFriction;
+                c.rot.y = c.restRotY;
+
+                if (speedSq < 0.0012 && Math.abs(c.rot.x) < 0.02 && Math.abs(c.rot.z) < 0.02) {
+                  c.rot.set(0, c.restRotY, 0);
+                  c.settled = true;
+                }
+              }
+            }
+            if (c.active) {
+              _dummyObj.position.copy(c.pos);
+              _dummyObj.rotation.copy(c.rot);
+              _dummyObj.scale.setScalar(1);
+            } else {
+              _dummyObj.position.set(0, -10, 0);
+              _dummyObj.scale.setScalar(0.001);
+            }
+            _dummyObj.updateMatrix();
+            rig.caltropInstanced.setMatrixAt(i, _dummyObj.matrix);
+          }
+        }
+        if (caltropDirty) {
+          rig.caltropInstanced.instanceMatrix.needsUpdate = true;
+        }
       }
-      if (c.active) {
-        _dummyObj.position.copy(c.pos);
-        _dummyObj.rotation.copy(c.rot);
-        _dummyObj.scale.setScalar(1);
-      } else {
-        _dummyObj.position.set(0, -10, 0);
-        _dummyObj.scale.setScalar(0.001);
-      }
-      _dummyObj.updateMatrix();
-      rig.caltropInstanced.setMatrixAt(i, _dummyObj.matrix);
-    }
-  }
-  if (caltropDirty) {
-    rig.caltropInstanced.instanceMatrix.needsUpdate = true;
-  }
-}
