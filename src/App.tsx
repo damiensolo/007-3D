@@ -26,6 +26,7 @@ import {
   QBranchGadgetKey,
   QBranchGadgetStates,
 } from './components/QBranchCabinAssembly';
+import { QBranchMiniController } from './components/QBranchMiniController';
 import {
   PRESETS,
   PresetConfig,
@@ -164,6 +165,34 @@ export function App() {
     setQBranchState((prev) => ({
       ...prev,
       plateIndex: ((prev.plateIndex + 1) % 3) as 0 | 1 | 2,
+    }));
+  }, []);
+
+  const handleToggleFireGuns = useCallback(() => {
+    if (gunDeploy < 0.85) {
+      setGunDeploy(1);
+      setIsFiringGuns(true);
+      setQBranchState((prev) => ({ ...prev, wingGuns: true }));
+    } else {
+      setIsFiringGuns((prev) => !prev);
+    }
+  }, [gunDeploy]);
+
+  const handleResetAllGadgets = useCallback(() => {
+    setGunDeploy(0);
+    setIsFiringGuns(false);
+    setQBranchState((prev) => ({
+      ...prev,
+      gearCapOpen: false,
+      gearButtonPressed: false,
+      oilSlick: false,
+      caltrops: false,
+      smokeScreen: false,
+      frontRam: false,
+      rearRam: false,
+      wingGuns: false,
+      roofHatch: false,
+      bulletShield: false,
     }));
   }, []);
 
@@ -870,6 +899,15 @@ export function App() {
           </div>
         </div>
       </div>
+
+      {/* Bottom-Right Interactive Mini 3D Q-Branch Armrest & Gear-Knob Controller */}
+      <QBranchMiniController
+        qBranchState={qBranchState}
+        isFiringGuns={isFiringGuns}
+        onCabinAction={handleCabinAction}
+        onToggleFireGuns={handleToggleFireGuns}
+        onResetAllGadgets={handleResetAllGadgets}
+      />
     </div>
   );
 }

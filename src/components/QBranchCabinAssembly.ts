@@ -48,7 +48,7 @@ export interface QBranchCabinRig {
   armrestGroup: THREE.Group;
   armrestLidPivot: THREE.Group;
   plateLeverGroup: THREE.Group;
-  togglePivots: Record<'oilSlick' | 'smokeScreen' | 'frontRam' | 'rearRam', THREE.Group>;
+  togglePivots: Record<'oilSlick' | 'smokeScreen' | 'frontRam' | 'rearRam' | 'caltrops', THREE.Group>;
   rockerPivots: Record<'wingGuns' | 'roofHatch' | 'bulletShield', THREE.Group>;
   switchLeds: Record<QBranchGadgetKey, THREE.MeshStandardMaterial>;
   subParts: CabinSubPart[];
@@ -284,6 +284,84 @@ function createArmrestLegendTexture(): THREE.CanvasTexture {
   drawGateNum(208, 924, '1');
 
   drawSliderIcon(367, 835, 'BULLET', 'SHIELD');
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+/**
+ * Generates an anodized engraved aluminum micro-plaque overlay for the switchboard deck
+ * so every 3D toggle, rocker, and the 1-2-3 E-gate has crisp readable labels directly on the console.
+ */
+function createSwitchDeckLabelsTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 1024;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.clearRect(0, 0, 512, 1024);
+
+  // Subtle brushed aluminum perimeter pinstripe on the recessed switch deck
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.24)';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(18, 18, 476, 988);
+
+  // Horizontal section divider hairlines
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.18)';
+  ctx.lineWidth = 2;
+  for (const yLine of [222, 412, 668]) {
+    ctx.beginPath();
+    ctx.moveTo(32, yLine);
+    ctx.lineTo(480, yLine);
+    ctx.stroke();
+  }
+
+  const drawPlaque = (cx: number, cy: number, text: string, accent = '#e2e8f0') => {
+    const w = Math.max(106, text.length * 16 + 24);
+    const h = 28;
+    ctx.fillStyle = 'rgba(9, 11, 15, 0.88)';
+    ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
+    ctx.strokeStyle = 'rgba(203, 213, 225, 0.45)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(cx - w / 2, cy - h / 2, w, h);
+
+    ctx.fillStyle = accent;
+    ctx.font = 'bold 17px "Arial Narrow", "Helvetica", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, cx, cy + 1);
+  };
+
+  // Map world switch coordinates (x in [-0.062..+0.062], z in [+0.134..-0.134]) to canvas (512x1024)
+  // Note: PlaneGeometry rotated -PI/2 around X maps u: -X -> +X (left to right) and v: +Z (top) -> -Z (bottom)
+  // In top-down view looking from +Y with +Z at top: left column is +X (x=+0.028 -> u=142) or -X depending on camera up.
+  // With PlaneGeometry rotation.x = -Math.PI/2, local +X is world +X, local +Y is world -Z (so v=1 is -Z, v=0 is +Z).
+  // Wait: in Three.js PlaneGeometry, local +Y has v=1 (top of canvas: y=0) and local -Y has v=0 (bottom of canvas: y=1024).
+  // When rotated by -Math.PI/2 around X: local +Y points to world +Z! So canvas top (y=0) is world +Z, canvas bottom (y=1024) is world -Z,
+  // canvas left (x=0) is world -X, and canvas right (x=512) is world +X!
+  const toCanvasX = (wx: number) => 256 + (wx / 0.124) * 512;
+  const toCanvasY = (wz: number) => 512 - (wz / 0.268) * 1024;
+
+  // Row 1 (z = +0.098): Rear Smoke (-0.028) & Oil Slick (+0.028)
+  drawPlaque(toCanvasX(-0.028), toCanvasY(0.072), 'SMOKE', '#cbd5e1');
+  drawPlaque(toCanvasX(0.028), toCanvasY(0.072), 'OIL SLICK', '#fde047');
+
+  // Row 2 (z = +0.052): Rear Ram (-0.028) & Front Ram (+0.028)
+  drawPlaque(toCanvasX(-0.028), toCanvasY(0.026), 'REAR RAM', '#fca5a5');
+  drawPlaque(toCanvasX(0.028), toCanvasY(0.026), 'FRONT RAM', '#fca5a5');
+
+  // Row 3 (z = -0.012): Roof Hatch (-0.028) & Wing Guns (+0.028)
+  drawPlaque(toCanvasX(-0.028), toCanvasY(-0.044), 'ROOF HATCH', '#7dd3fc');
+  drawPlaque(toCanvasX(0.028), toCanvasY(-0.044), 'WING GUNS', '#fdba74');
+
+  // Row 4 Center/Left: Caltrops / Nails (-0.028, z = -0.055) & Bullet Shield (-0.028, z = -0.094)
+  drawPlaque(toCanvasX(-0.028), toCanvasY(-0.068), 'NAILS', '#6ee7b7');
+  drawPlaque(toCanvasX(-0.028), toCanvasY(-0.124), 'SHIELD', '#d8b4fe');
+
+  // Row 4 Right: Revolving Plates E-Gate (+0.028, z = -0.088)
+  drawPlaque(toCanvasX(0.028), toCanvasY(-0.126), 'PLATES 1·2·3', '#fcd34d');
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -581,6 +659,23 @@ export function createQBranchCabinRig(
 
   const deckY = 0.061;
 
+  // Engraved Anodized Micro-Plaque Label Overlay on the recessed switchboard deck
+  const deckLabelsTex = createSwitchDeckLabelsTexture();
+  const deckLabelsMat = new THREE.MeshStandardMaterial({
+    map: deckLabelsTex,
+    transparent: true,
+    roughness: 0.45,
+    metalness: 0.25,
+    depthWrite: false,
+  });
+  const deckLabelsPlane = new THREE.Mesh(
+    new THREE.PlaneGeometry(boxWidth - 0.020, boxLen - 0.022),
+    deckLabelsMat
+  );
+  deckLabelsPlane.rotation.x = -Math.PI / 2;
+  deckLabelsPlane.position.set(0, deckY + 0.0003, 0);
+  armrestGroup.add(deckLabelsPlane);
+
   // Hinge stays on +X side so lid opens from the current position toward passenger (+X)
   const hingePivotX = boxWidth / 2 - 0.004;
   const armrestLidPivot = new THREE.Group();
@@ -639,12 +734,12 @@ export function createQBranchCabinRig(
 
   // --- Corrected Switchboard Layout (Front +Z near gearstick -> Rear -Z) ---
   const switchLeds = {} as Record<QBranchGadgetKey, THREE.MeshStandardMaterial>;
-  const togglePivots = {} as Record<'oilSlick' | 'smokeScreen' | 'frontRam' | 'rearRam', THREE.Group>;
+  const togglePivots = {} as Record<'oilSlick' | 'smokeScreen' | 'frontRam' | 'rearRam' | 'caltrops', THREE.Group>;
   const rockerPivots = {} as Record<'wingGuns' | 'roofHatch' | 'bulletShield', THREE.Group>;
 
-  // A. Front 2x2 (+Z, closest to gearstick): 4 Sculpted Black Duckbill Paddle Toggles
+  // A. Front 2x2 (+Z, closest to gearstick) + Rear-Left Tactical Caltrop Toggle: 5 Sculpted Black Duckbill Paddle Toggles
   const toggleSpecs: Array<{
-    key: 'oilSlick' | 'smokeScreen' | 'frontRam' | 'rearRam';
+    key: 'oilSlick' | 'smokeScreen' | 'frontRam' | 'rearRam' | 'caltrops';
     label: string;
     note: string;
     x: number;
@@ -654,7 +749,7 @@ export function createQBranchCabinRig(
     {
       key: 'oilSlick',
       label: 'Oil Slick Toggle Switch',
-      note: 'Activates twin rear-bumper oil slick nozzles.',
+      note: 'Activates the hinged left rear taillight oil slick dispenser.',
       x: 0.028,
       z: 0.098,
       color: 0xeab308,
@@ -682,6 +777,14 @@ export function createQBranchCabinRig(
       x: -0.028,
       z: 0.052,
       color: 0xef4444,
+    },
+    {
+      key: 'caltrops',
+      label: 'Caltrop / Tire Nails Toggle Switch',
+      note: 'Drops the right rear taillight cluster to scatter 4-pointed steel caltrops.',
+      x: -0.028,
+      z: -0.052,
+      color: 0x10b981,
     },
   ];
 
@@ -785,11 +888,11 @@ export function createQBranchCabinRig(
     color: number;
   }> = [
     {
-      key: 'wingGuns',
+      key: ' wingGuns'.trim() as 'wingGuns',
       label: 'Front Guns Rocker Switch',
       note: 'Arms and deploys the twin front-wing Browning .30-caliber machine guns.',
       x: 0.028,
-      z: -0.012,
+      z: -0.008,
       color: 0xf97316,
     },
     {
@@ -797,7 +900,7 @@ export function createQBranchCabinRig(
       label: 'Roof Hatch Arming Switch',
       note: 'Unlocks the passenger-side ejector seat roof hatch.',
       x: -0.028,
-      z: -0.012,
+      z: -0.008,
       color: 0x38bdf8,
     },
     {
@@ -805,7 +908,7 @@ export function createQBranchCabinRig(
       label: 'Bullet Shield Rocker Switch',
       note: 'Raises the armored steel deflector plate behind the rear windscreen.',
       x: -0.028,
-      z: -0.088,
+      z: -0.095,
       color: 0xa855f7,
     },
   ];
@@ -1060,11 +1163,12 @@ export function updateQBranchCabinRig(
   const targetArmRot = state.armrestOpen ? -Math.PI * 0.6 : 0;
   rig.armrestLidPivot.rotation.z += (targetArmRot - rig.armrestLidPivot.rotation.z) * lerpFactor;
 
-  const toggleKeys: Array<'oilSlick' | 'smokeScreen' | 'frontRam' | 'rearRam'> = [
+  const toggleKeys: Array<'oilSlick' | 'smokeScreen' | 'frontRam' | 'rearRam' | 'caltrops'> = [
     'oilSlick',
     'smokeScreen',
     'frontRam',
     'rearRam',
+    'caltrops',
   ];
   for (const key of toggleKeys) {
     const active = state[key];
