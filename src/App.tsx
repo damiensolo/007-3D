@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Crosshair,
   Eye,
   EyeOff,
+  Film,
   Flame,
   Layers,
   Maximize2,
@@ -27,6 +30,7 @@ import {
   QBranchGadgetStates,
 } from './components/QBranchCabinAssembly';
 import { QBranchMiniController } from './components/QBranchMiniController';
+import { BondTitleSequence } from './components/BondTitleSequence';
 import {
   PRESETS,
   PresetConfig,
@@ -38,6 +42,7 @@ import {
 export function App() {
   const [parts, setParts] = useState<DB5Part[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showTitles, setShowTitles] = useState(true);
   const [loadProgress, setLoadProgress] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -74,6 +79,7 @@ export function App() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [controlsOpen, setControlsOpen] = useState(true);
   const [cameraTargetRequest, setCameraTargetRequest] = useState<{
     position: [number, number, number];
     target: [number, number, number];
@@ -411,14 +417,21 @@ export function App() {
           <div className="absolute bottom-3 right-3 w-4 h-4 border-b border-r border-[#D4AF37]/45" />
         </div>
 
-        {/* Top-Right Soundtrack Control Pill */}
+        {/* Top-Right Soundtrack & Replay Titles Pill */}
         <div
           className="absolute top-4 right-4 z-30 flex items-center gap-2.5 px-3 py-1.5 gf-panel"
           title="Background Soundtrack (Pixabay Free License · Auto-Loop)"
         >
+          <div className="hidden md:flex items-center gap-1 pr-1 border-r border-[#F4F1EA]/15" aria-hidden="true">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#D4AF37]" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[#C42B2B]" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[#38BDF8]" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[#F4F1EA]" />
+          </div>
+
           <button
             onClick={togglePlayAudio}
-          className={`flex items-center justify-center w-6 h-6 rounded-[1px] transition cursor-pointer ${isPlayingAudio
+            className={`flex items-center justify-center w-6 h-6 rounded-[1px] transition cursor-pointer ${isPlayingAudio
               ? 'bg-[#D4AF37] text-[#050505]'
               : 'bg-[#121214] text-[#F4F1EA]/80 hover:text-[#F4F1EA] hover:bg-[#1c1c20] border border-[#F4F1EA]/15'
               }`}
@@ -427,36 +440,47 @@ export function App() {
             {isPlayingAudio ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 ml-0.5" />}
           </button>
 
-            <span className="font-display-bj text-[11px] font-semibold text-[#F4F1EA] tracking-[0.16em] hidden sm:inline">
-              007 AUDIO
-            </span>
+          <span className="font-display-bj text-[11px] font-semibold text-[#F4F1EA] tracking-[0.16em] hidden sm:inline">
+            007 AUDIO
+          </span>
 
-            <button
-              onClick={() => setIsMutedAudio((m) => !m)}
-              className="p-1 text-[#F4F1EA]/60 hover:text-[#D4AF37] transition cursor-pointer"
-              title={isMutedAudio ? 'Unmute' : 'Mute'}
-            >
-              {isMutedAudio || audioVolume === 0 ? (
-            <VolumeX className="w-3.5 h-3.5 text-[#F4F1EA]/40" />
-              ) : (
-            <Volume2 className="w-3.5 h-3.5 text-[#D4AF37]" />
-              )}
-            </button>
+          <button
+            onClick={() => setIsMutedAudio((m) => !m)}
+            className="p-1 text-[#F4F1EA]/60 hover:text-[#D4AF37] transition cursor-pointer"
+            title={isMutedAudio ? 'Unmute' : 'Mute'}
+          >
+            {isMutedAudio || audioVolume === 0 ? (
+              <VolumeX className="w-3.5 h-3.5 text-[#F4F1EA]/40" />
+            ) : (
+              <Volume2 className="w-3.5 h-3.5 text-[#D4AF37]" />
+            )}
+          </button>
 
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={isMutedAudio ? 0 : audioVolume}
-              onChange={(e) => {
-                const v = parseFloat(e.target.value);
-                setAudioVolume(v);
-                if (v > 0 && isMutedAudio) setIsMutedAudio(false);
-              }}
-              className="w-16 gf-slider cursor-pointer"
-              aria-label="Soundtrack volume"
-            />
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={isMutedAudio ? 0 : audioVolume}
+            onChange={(e) => {
+              const v = parseFloat(e.target.value);
+              setAudioVolume(v);
+              if (v > 0 && isMutedAudio) setIsMutedAudio(false);
+            }}
+            className="w-16 gf-slider cursor-pointer"
+            aria-label="Soundtrack volume"
+          />
+
+          <div className="w-px h-4 bg-[#F4F1EA]/15" />
+
+          <button
+            onClick={() => setShowTitles(true)}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded-[1px] font-mono-bj text-[10px] font-bold uppercase tracking-wider text-[#D4AF37] border border-[#D4AF37]/40 hover:bg-[#D4AF37] hover:text-[#050505] transition cursor-pointer"
+            title="Replay 007 Opening Title Sequence"
+          >
+            <Film className="w-3 h-3" />
+            <span className="hidden sm:inline">TITLES</span>
+          </button>
         </div>
 
         {/* 3D Viewport */}
@@ -478,46 +502,16 @@ export function App() {
           onCabinAction={handleCabinAction}
         />
 
-        {/* Goldfinger 1964 Optical Projector Title-Card Loading Overlay */}
-        {loading && (
-              <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#050505]">
-                <div className="gf-film-grain absolute inset-0 pointer-events-none" />
-                <div className="relative px-10 py-8 border border-[#D4AF37]/40 bg-[#050505] max-w-md w-full mx-4 text-center">
-                  <div className="absolute -top-1.5 -left-1.5 w-3 h-3 border-t-2 border-l-2 border-[#D4AF37]" />
-                  <div className="absolute -top-1.5 -right-1.5 w-3 h-3 border-t-2 border-r-2 border-[#D4AF37]" />
-                  <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 border-b-2 border-l-2 border-[#D4AF37]" />
-                  <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 border-b-2 border-r-2 border-[#D4AF37]" />
-
-                  <div className="font-mono-bj text-[10px] tracking-[0.35em] uppercase text-[#D4AF37]/80 mb-2">
-                    MI6 · Q-BRANCH TECHNICAL DOSSIER
-                  </div>
-                  <h2 className="font-display-bj text-4xl font-bold tracking-[0.14em] text-[#D4AF37]">
-                    GOLDFINGER
-                  </h2>
-                  <p className="font-display-bj text-sm tracking-[0.26em] text-[#F4F1EA] mt-1">
-                    1964 ASTON MARTIN DB5 VANTAGE
-                  </p>
-
-                  <div className="w-full h-[2px] bg-[#F4F1EA]/15 mt-6 overflow-hidden">
-                    <div
-                      className="h-full bg-[#D4AF37] transition-all duration-150 ease-out"
-                      style={{ width: `${Math.max(8, loadProgress)}%` }}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between mt-2.5 font-mono-bj text-[10px] tracking-widest uppercase text-[#F4F1EA]/55">
-                    <span>
-                      {loadProgress > 0 && loadProgress < 100
-                        ? 'PROJECTING COACHWORK'
-                        : 'CALIBRATING SHADERS'}
-                    </span>
-                    <span className="text-[#D4AF37] font-semibold">
-                      {loadProgress > 0 ? `${loadProgress}%` : 'INIT'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-      )}
+        {/* 007 Opening Title Sequence & Loader (Binder × Brownjohn × Kleinman) */}
+        {showTitles && (
+          <BondTitleSequence
+            loading={loading}
+            loadProgress={loadProgress}
+            isPlayingAudio={isPlayingAudio}
+            onToggleAudio={togglePlayAudio}
+            onComplete={() => setShowTitles(false)}
+          />
+        )}
 
               {/* Error Overlay */}
               {loadError && (
@@ -584,6 +578,11 @@ export function App() {
                                         </span>
                                         <span className="font-display-bj text-xs font-bold tracking-[0.22em] text-[#D4AF37]">
                                           DB5 // GOLDFINGER ATLAS
+                                        </span>
+                                        <span className="flex items-center gap-1 ml-1" aria-hidden="true">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-[#D4AF37]" />
+                                          <span className="w-1.5 h-1.5 rounded-full bg-[#C42B2B]" />
+                                          <span className="w-1.5 h-1.5 rounded-full bg-[#38BDF8]" />
                                         </span>
                                     </div>
                                       <h1 className="font-display-bj text-base font-bold tracking-[0.06em] text-[#F4F1EA] mt-1.5">
@@ -823,30 +822,57 @@ export function App() {
                                                           </aside>
       )}
 
-                                                          {/* Bottom Floating Control Dock */}
-                                                          <div
-        className={`absolute bottom-4 z-20 left-1/2 -translate-x-1/2 flex flex-col gap-2 max-w-[calc(100vw-2rem)] ${sidebarOpen ? 'lg:left-[calc(50%+10rem)]' : ''
-                                                              }`}
-                                                          >
-                                                            {/* Presets Row */}
-                                                              <div className="flex items-center justify-center flex-wrap gap-1 px-2 py-1.5 gf-panel">
-                                                                {PRESETS.map((preset) => {
-                                                                  const active = activePresetId === preset.id;
-                                                                  return (
-                                                                    <button
-                                                                      key={preset.id}
-                                                                      onClick={() => applyPreset(preset)}
-                                                                      title={preset.description}
-                className={`px-3 py-1 rounded-[1px] font-display-bj text-xs font-semibold tracking-[0.12em] transition cursor-pointer ${active
-                                                                        ? 'bg-[#D4AF37] text-[#050505]'
-                                                                        : 'text-[#F4F1EA]/75 hover:text-[#F4F1EA] hover:bg-[#141416]'
-                                                                        }`}
-                                                                    >
-                                                                      {preset.label}
-                                                                    </button>
-                                                                  );
-                                                                })}
-                                                              </div>
+      {/* Bottom Floating Control Dock (Collapsible Views & Controls) */}
+      <div
+        className={`absolute bottom-4 z-20 left-1/2 -translate-x-1/2 flex flex-col gap-2 max-w-[calc(100vw-2rem)] ${
+          sidebarOpen ? 'lg:left-[calc(50%+10rem)]' : ''
+        }`}
+      >
+        {!controlsOpen ? (
+          <button
+            onClick={() => setControlsOpen(true)}
+            className="flex items-center gap-2.5 px-3.5 py-2 gf-panel-gold hover:bg-[#121214] font-display-bj text-xs font-bold tracking-[0.16em] text-[#F4F1EA] transition cursor-pointer"
+            title="Expand Views & Q-Branch Controls"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5 text-[#D4AF37]" />
+            <span>VIEWS &amp; CONTROLS</span>
+            {explode > 0 && (
+              <span className="px-1.5 py-0.5 font-mono-bj text-[10px] font-bold bg-[#D4AF37] text-[#050505]">
+                {Math.round(explode * 100)}%
+              </span>
+            )}
+            <ChevronUp className="w-3.5 h-3.5 text-[#D4AF37]" />
+          </button>
+        ) : (
+          <>
+            {/* Presets Row + Collapse Button */}
+            <div className="flex items-center justify-center flex-wrap gap-1 px-2 py-1.5 gf-panel">
+              {PRESETS.map((preset) => {
+                const active = activePresetId === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    onClick={() => applyPreset(preset)}
+                    title={preset.description}
+                    className={`px-3 py-1 rounded-[1px] font-display-bj text-xs font-semibold tracking-[0.12em] transition cursor-pointer ${
+                      active
+                        ? 'bg-[#D4AF37] text-[#050505]'
+                        : 'text-[#F4F1EA]/75 hover:text-[#F4F1EA] hover:bg-[#141416]'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+              <div className="w-px h-4 bg-[#F4F1EA]/15 mx-0.5" />
+              <button
+                onClick={() => setControlsOpen(false)}
+                className="p-1 rounded-[1px] text-[#F4F1EA]/60 hover:text-[#D4AF37] hover:bg-[#141416] transition cursor-pointer"
+                title="Collapse Views & Controls"
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+            </div>
 
                                                               {/* Sliders & Controls */}
                                                                 <div className="flex flex-col gap-2 px-4 py-2.5 gf-panel min-w-[340px] sm:min-w-[500px]">
@@ -1013,11 +1039,13 @@ export function App() {
                                                                               >
                                                                                 {label}
                                                                               </button>
-                                                                            );
-                                                                          })}
+                                                                              );
+                                                                            })}
+                                                                          </div>
                                                                         </div>
-                                                                      </div>
-                                                                    </div>
+          </>
+        )}
+      </div>
 
                                                                     {/* Bottom-Right Interactive Mini 3D Q-Branch Armrest & Gear-Knob Controller */}
                                                                     <QBranchMiniController
