@@ -327,6 +327,9 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
   qBranchHighlightRef.current = qBranchHighlight;
 
   const partsRef = useRef<InternalPart[]>([]);
+  const companionPartsRef = useRef<
+    Array<{ mesh: THREE.Mesh; basePosition: THREE.Vector3; explodeOffset: THREE.Vector3 }>
+  >([]);
   const pickableMeshesRef = useRef<THREE.Mesh[]>([]);
   const gunRigsRef = useRef<GunRig[]>([]);
   const cabinRigRef = useRef<QBranchCabinRig | null>(null);
@@ -752,6 +755,26 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
               explodeOffset: localExplodeVec,
               originalMaterials: clonedMats,
             });
+
+            if (sub.companions) {
+              for (const comp of sub.companions) {
+                const cQuat = new THREE.Quaternion();
+                const cScale = new THREE.Vector3();
+                const cPos = new THREE.Vector3();
+                if (comp.parent) {
+                  comp.parent.matrixWorld.decompose(cPos, cQuat, cScale);
+                }
+                const compExplodeVec = worldExplodeVec
+                  .clone()
+                  .applyQuaternion(cQuat.clone().invert())
+                  .divide(cScale);
+                companionPartsRef.current.push({
+                  mesh: comp,
+                  basePosition: comp.position.clone(),
+                  explodeOffset: compExplodeVec,
+                });
+              }
+            }
           }
         }
 
@@ -802,6 +825,7 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
             materialLabel: string;
             qBranchNote: string;
             semanticDir: [number, number, number];
+            companions?: THREE.Mesh[];
             action?: CabinSubPart['action'];
           }>
         ) => {
@@ -853,6 +877,26 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
               explodeOffset: localExplodeVec,
               originalMaterials: clonedMats,
             });
+
+            if (sub.companions) {
+              for (const comp of sub.companions) {
+                const cQuat = new THREE.Quaternion();
+                const cScale = new THREE.Vector3();
+                const cPos = new THREE.Vector3();
+                if (comp.parent) {
+                  comp.parent.matrixWorld.decompose(cPos, cQuat, cScale);
+                }
+                const compExplodeVec = worldExplodeVec
+                  .clone()
+                  .applyQuaternion(cQuat.clone().invert())
+                  .divide(cScale);
+                companionPartsRef.current.push({
+                  mesh: comp,
+                  basePosition: comp.position.clone(),
+                  explodeOffset: compExplodeVec,
+                });
+              }
+            }
           }
         };
 
@@ -1886,6 +1930,16 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
         part.mesh.position
           .copy(part.basePosition)
           .addScaledVector(part.explodeOffset, currentExplode);
+      }
+
+      for (const comp of companionPartsRef.current) {
+        if (currentExplode === 0) {
+          comp.mesh.position.copy(comp.basePosition);
+        } else {
+          comp.mesh.position
+            .copy(comp.basePosition)
+            .addScaledVector(comp.explodeOffset, currentExplode);
+        }
       }
 
       // Smoothly lerp camera if a preset/focus goal is active

@@ -1,25 +1,144 @@
 @import "tailwindcss";
 
+:root {
+  --gf-black: #050505;
+  --gf-noir: #0b0b0c;
+  --gf-bone: #F4F1EA;
+  --gf-gold: #D4AF37;
+  --gf-gold-bright: #E6C75A;
+  --gf-red: #C42B2B;
+  --gf-orange: #D96B27;
+}
+
 @layer base {
   * {
     box-sizing: border-box;
   }
 
+  body {
+    font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: var(--gf-black);
+    color: var(--gf-bone);
+  }
+
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 4px;
+    height: 4px;
   }
 
   ::-webkit-scrollbar-track {
-    background: transparent;
+    background: #080809;
   }
 
   ::-webkit-scrollbar-thumb {
-    background: rgba(161, 161, 170, 0.25);
-    border-radius: 9999px;
+    background: rgba(212, 175, 55, 0.35);
+    border-radius: 0px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(161, 161, 170, 0.45);
+    background: rgba(212, 175, 55, 0.7);
   }
+}
+
+/* 1960s Goldfinger × Robert Brownjohn Typography */
+.font-display-bj {
+  font-family: 'Oswald', 'Space Grotesk', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.font-mono-bj {
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Sharp Bauhaus Noir Panel (Zero glassmorphic blur, crisp hairline border) */
+.gf-panel {
+  background-color: rgba(5, 5, 5, 0.94);
+  border: 1px solid rgba(244, 241, 234, 0.16);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(212, 175, 55, 0.14);
+  border-radius: 2px;
+}
+
+.gf-panel-gold {
+  background-color: rgba(5, 5, 5, 0.95);
+  border: 1px solid rgba(212, 175, 55, 0.42);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.88), inset 0 1px 0 rgba(212, 175, 55, 0.25);
+  border-radius: 2px;
+}
+
+/* Subtle 35mm Silver-Gelatin Film Grain & Optical Projector Vignette */
+.gf-film-grain {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.88' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.055'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+}
+
+.gf-projector-vignette {
+  background: radial-gradient(ellipse at 54% 48%,
+      rgba(212, 175, 55, 0.03) 0%,
+      rgba(5, 5, 5, 0) 56%,
+      rgba(0, 0, 0, 0.62) 100%);
+}
+
+/* Custom 1960s Precision Range Slider */
+input[type='range'].gf-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 2px;
+  background: rgba(244, 241, 234, 0.2);
+  border-radius: 0;
+  outline: none;
+}
+
+input[type='range'].gf-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 14px;
+  background: #D4AF37;
+  border: 1px solid #050505;
+  border-radius: 1px;
+  cursor: pointer;
+  transition: transform 120ms ease, background-color 120ms ease;
+}
+
+input[type='range'].gf-slider::-webkit-slider-thumb:hover {
+  transform: scaleY(1.18);
+  background: #E6C75A;
+}
+
+input[type='range'].gf-slider-orange::-webkit-slider-thumb {
+  background: #D96B27;
+}
+
+input[type='range'].gf-slider-orange::-webkit-slider-thumb:hover {
+  background: #F2853F;
+}
+
+/* Robert Brownjohn "Watching Words Move" Kinetic Micro-Interactions */
+@keyframes bj-recoil {
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  25% {
+    transform: translateX(-2px);
+  }
+
+  65% {
+    transform: translateX(1.5px);
+  }
+}
+
+.bj-fire-active {
+  animation: bj-recoil 0.14s steps(2, end) infinite;
+}
+
+.bj-eject-hover:hover {
+  transform: translateY(-2px);
+}
+
+.bj-stow-hover:hover {
+  letter-spacing: -0.02em;
 }

@@ -7,6 +7,7 @@ export interface GadgetSubPart {
   materialLabel: string;
   qBranchNote: string;
   semanticDir: [number, number, number];
+  companions?: THREE.Mesh[];
 }
 
 interface SmokeParticle {
@@ -332,11 +333,12 @@ export function createQBranchGadgetsRig(
     label: string,
     materialLabel: string,
     qBranchNote: string,
-    semanticDir: [number, number, number]
+    semanticDir: [number, number, number],
+    companions?: THREE.Mesh[]
   ) => {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    subParts.push({ mesh, label, materialLabel, qBranchNote, semanticDir });
+    subParts.push({ mesh, label, materialLabel, qBranchNote, semanticDir, companions });
     return mesh;
   };
 
@@ -399,6 +401,7 @@ export function createQBranchGadgetsRig(
     const core = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, plateW - 0.01, 3), gunmetalMat);
     core.rotation.z = Math.PI / 2;
     drum.add(core);
+    subParts[subParts.length - 1].companions = [core];
 
     const plateFaceGeo = new THREE.BoxGeometry(plateW - 0.006, plateH - 0.004, 0.004);
     for (let i = 0; i < 3; i++) {
@@ -455,6 +458,7 @@ export function createQBranchGadgetsRig(
     collar.rotation.x = Math.PI / 2;
     collar.position.z = -0.005;
     unit.add(collar);
+    subParts[subParts.length - 1].companions = [collar];
 
     // Telescoping piston + sculpted chrome/rubber over-rider head
     const ramHead = new THREE.Group();
@@ -499,6 +503,7 @@ export function createQBranchGadgetsRig(
     const rubberPad = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.095, 0.016), rubberPadMat);
     rubberPad.position.z = 0.038;
     ramHead.add(rubberPad);
+    subParts[subParts.length - 1].companions = [rubberPad];
 
     return ramHead;
   };
@@ -612,6 +617,7 @@ export function createQBranchGadgetsRig(
   const slotWell = new THREE.Mesh(slotWellGeo, new THREE.MeshBasicMaterial({ color: 0x050608 }));
   slotWell.position.set(0, 0, SHIELD_Z);
   root.add(slotWell);
+  subParts[subParts.length - 1].companions = [slotWell];
 
   // Rising planar ballistic steel shield + flush Silver Birch top cap
   // Stowed offset = -0.326m so top cap sits flush inside the beveled slot bezel
@@ -768,6 +774,11 @@ export function createQBranchGadgetsRig(
   outerBevelMesh.visible = false;
   root.add(outerBevelMesh);
 
+  const innerFlangeGeo = buildRoofOpeningRingGeo(-0.011, -0.020, -0.008, -0.024, 0.068, 256);
+  const innerFlangeMesh = new THREE.Mesh(innerFlangeGeo, gunmetalMat);
+  innerFlangeMesh.visible = false;
+  root.add(innerFlangeMesh);
+
   // Recessed perimeter weatherstrip & channel lip (recessed below outer Silver Birch skin and hidden when closed)
   const roofSealGeo = buildRoofOpeningRingGeo(-0.003, -0.015, -0.004, -0.022, 0.068, 256);
   const roofSealMesh = register(
@@ -775,15 +786,11 @@ export function createQBranchGadgetsRig(
     'Ejector Roof Opening Weatherstrip & Flange',
     'Molded Neoprene & Anodized Channel',
     'Recessed perimeter weatherstrip and inner roof channel lip revealed when the roof panel jettisons.',
-    [0.28, 1.15, -0.20]
+    [0.42, 2.02, -0.15],
+    [outerBevelMesh, innerFlangeMesh]
   );
   roofSealMesh.visible = false;
   root.add(roofSealMesh);
-
-  const innerFlangeGeo = buildRoofOpeningRingGeo(-0.011, -0.020, -0.008, -0.024, 0.068, 256);
-  const innerFlangeMesh = new THREE.Mesh(innerFlangeGeo, gunmetalMat);
-  innerFlangeMesh.visible = false;
-  root.add(innerFlangeMesh);
 
   // Jettisonable Roof Panel Group (extracted live from SM_Roof_101 so it sits 100% flush & seamless when closed, zero pins or surface indicators)
   const roofHatchBasePos = ejectorExtract?.roofPanelCenter
@@ -793,14 +800,23 @@ export function createQBranchGadgetsRig(
   roofHatchGroup.position.copy(roofHatchBasePos);
   root.add(roofHatchGroup);
 
+  // Clean recessed Silver Birch edge lip on the jettisoned roof panel (no hazard stencil plate or alignment pins)
+  const panelSkirtGeo = buildRoofOpeningRingGeo(-0.0005, -0.010, -0.0005, -0.013, 0.068, 256);
+  panelSkirtGeo.translate(-roofHatchBasePos.x, -roofHatchBasePos.y, -roofHatchBasePos.z);
+  const panelSkirtMesh = new THREE.Mesh(panelSkirtGeo, silverBirchMat);
+  panelSkirtMesh.visible = false;
+  roofHatchGroup.add(panelSkirtMesh);
+
   if (ejectorExtract && ejectorExtract.roofPanelMeshes.length > 0) {
-    for (const rm of ejectorExtract.roofPanelMeshes) {
+    for (let idxRm = 0; idxRm < ejectorExtract.roofPanelMeshes.length; idxRm++) {
+      const rm = ejectorExtract.roofPanelMeshes[idxRm];
       register(
         rm,
         'Jettisonable Passenger Roof Panel',
         'Silver Birch Aluminum Roof Section',
         'Flush seamless passenger roof section released by pneumatic shear bolts prior to compressed-air seat ejection.',
-        [0.45, 1.45, -0.20]
+        [0.75, 2.55, -0.15],
+        idxRm === 0 ? [panelSkirtMesh] : undefined
       );
       roofHatchGroup.add(rm);
     }
@@ -810,17 +826,11 @@ export function createQBranchGadgetsRig(
       'Jettisonable Passenger Roof Panel',
       'Silver Birch Aluminum Roof Section',
       'Flush seamless passenger roof section released by pneumatic shear bolts prior to compressed-air seat ejection.',
-      [0.45, 1.45, -0.20]
+      [0.75, 2.55, -0.15],
+      [panelSkirtMesh]
     );
     roofHatchGroup.add(fallbackHatch);
   }
-
-  // Clean recessed Silver Birch edge lip on the jettisoned roof panel (no hazard stencil plate or alignment pins)
-  const panelSkirtGeo = buildRoofOpeningRingGeo(-0.0005, -0.010, -0.0005, -0.013, 0.068, 256);
-  panelSkirtGeo.translate(-roofHatchBasePos.x, -roofHatchBasePos.y, -roofHatchBasePos.z);
-  const panelSkirtMesh = new THREE.Mesh(panelSkirtGeo, silverBirchMat);
-  panelSkirtMesh.visible = false;
-  roofHatchGroup.add(panelSkirtMesh);
 
   // Minimal Passenger Bucket Seat Group + Compact Twin Compressed-Air Pistons
   const passengerSeatBasePos = ejectorExtract?.passengerSeatCenter
@@ -837,7 +847,7 @@ export function createQBranchGadgetsRig(
         'Q-Branch Passenger Ejector Seat',
         'Connolly Leather Bucket Seat',
         'Minimal front passenger bucket seat launched skyward by high-pressure compressed-air cylinders.',
-        [0.35, 1.25, -0.15]
+        [0.38, 1.35, -0.15]
       );
       passengerSeatGroup.add(sm);
     }
@@ -850,7 +860,7 @@ export function createQBranchGadgetsRig(
       'Compressed-Air Ejector Seat Piston',
       'Polished Stainless Pneumatic Ram',
       'Compact high-pressure pneumatic piston tucked beneath the passenger bucket seat cushion.',
-      [0.35, 0.85, -0.15]
+      [0.38, 0.95, -0.15]
     );
     airPiston.position.set(rx, -0.22, -0.04);
     passengerSeatGroup.add(airPiston);
@@ -863,7 +873,7 @@ export function createQBranchGadgetsRig(
       'Compressed-Air Ejector Floor Cylinder',
       'High-Pressure Pneumatic Launch Cylinder',
       'Twin compressed-air launch cylinders anchored to the passenger floor pan.',
-      [0.35, 0.45, -0.15]
+      [0.38, 0.55, -0.15]
     );
     floorTube.position.set(passengerSeatBasePos.x + rx, 0.32, passengerSeatBasePos.z - 0.04);
     root.add(floorTube);
@@ -1114,7 +1124,8 @@ export function createQBranchGadgetsRig(
     'Left Taillight Oil Slick Nozzle',
     'Machined Hollow Aluminum Pipe',
     'Retractable hollow high-pressure oil dispensing pipe concealed inside the cylindrical left amber lamp recess.',
-    [0.88, 0.25, -1.15]
+    [0.88, 0.25, -1.15],
+    [lampBackCup, wellOuterShell, wellChromeRim, wellInnerRecess, ...leftOilArms]
   );
   leftOilNozzle.rotation.x = -Math.PI / 2; // +Y hollow tip points toward -Z (rear)
   leftOilNozzle.position.set(0.6325, 0.770, -2.165);
@@ -1250,6 +1261,7 @@ export function createQBranchGadgetsRig(
   }
 
   // Contoured stadium-profile backing plate behind the 3-lens right taillight cluster
+  const rightCaltropCompanions: THREE.Mesh[] = [];
   for (const ly of [0.042, 0.128, 0.214]) {
     const clusterBackCup = new THREE.Mesh(
       new THREE.CylinderGeometry(0.041, 0.039, 0.012, 28),
@@ -1258,6 +1270,7 @@ export function createQBranchGadgetsRig(
     clusterBackCup.rotation.x = Math.PI / 2;
     clusterBackCup.position.set(0, ly, 0.002);
     rightCaltropPivot.add(clusterBackCup);
+    rightCaltropCompanions.push(clusterBackCup);
   }
 
   // Contoured recessed caltrop housing behind the right taillight cluster
@@ -1279,19 +1292,22 @@ export function createQBranchGadgetsRig(
     wellInner.rotation.x = Math.PI / 2;
     wellInner.position.set(0, wy, -0.002);
     rightHousingGroup.add(wellInner);
+    rightCaltropCompanions.push(wellShell, wellInner);
   }
   root.add(rightHousingGroup);
 
   const rightHinge = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.056, 12), chromeMat);
   rightHinge.rotation.z = Math.PI / 2;
   rightCaltropPivot.add(rightHinge);
+  rightCaltropCompanions.push(rightHinge);
 
   const caltropHopper = register(
     new THREE.Mesh(new THREE.BoxGeometry(0.054, 0.195, 0.072), aluFrameMat),
     'Caltrop Magazine & Ejector Rack',
     'Machined Aluminum Hopper',
     'Internal right-wing vertical magazine feeding 4-sided steel tire-shredding caltrops into the twin launch chutes.',
-    caltropUnitSemanticDir
+    caltropUnitSemanticDir,
+    rightCaltropCompanions
   );
   caltropHopper.position.set(-0.585, 0.684, -2.095);
   const hopperNeck = new THREE.Mesh(
@@ -1881,7 +1897,10 @@ export function createQBranchGadgetsRig(
   );
 
   for (const cfg of rearHubConfigs) {
-    const slasherSemanticDir: [number, number, number] = [cfg.sideSign * 1.35, 0.08, -0.35];
+    const slasherBaseDir: [number, number, number] = [cfg.sideSign * 2.35, -0.08, -0.35];
+    const slasherStage1Dir: [number, number, number] = [cfg.sideSign * 2.55, -0.08, -0.35];
+    const slasherStage2Dir: [number, number, number] = [cfg.sideSign * 2.75, -0.08, -0.35];
+    const slasherHeadDir: [number, number, number] = [cfg.sideSign * 2.95, -0.08, -0.35];
     const rootGroup = new THREE.Group();
     rootGroup.position.copy(cfg.pivotPos);
     root.add(rootGroup);
@@ -1896,15 +1915,6 @@ export function createQBranchGadgetsRig(
     spinGroup.add(axleAligned);
 
     // 1. Stationary/Hub-Seated Machined Splined Axle Collar (stays attached to the wheel hub face when the spinner separates)
-    const hubCollar = register(
-      new THREE.Mesh(hubSeatGeo, chromeMat),
-      `Rear ${cfg.side} Wheel Hub Axle Seat`,
-      'CNC-Machined Chrome Splined Hub',
-      'Precision-machined center-lock wheel hub collar and internal axle bore from which the telescoping tyre-slasher shaft emerges.',
-      slasherSemanticDir
-    );
-    axleAligned.add(hubCollar);
-
     const hubBoreSeal = new THREE.Mesh(
       new THREE.TorusGeometry(0.0225, 0.0022, 12, 28),
       gunmetalMat
@@ -1913,17 +1923,29 @@ export function createQBranchGadgetsRig(
     hubBoreSeal.position.y = -0.001;
     axleAligned.add(hubBoreSeal);
 
+    const hubCollar = register(
+      new THREE.Mesh(hubSeatGeo, chromeMat),
+      `Rear ${cfg.side} Wheel Hub Axle Seat`,
+      'CNC-Machined Chrome Splined Hub',
+      'Precision-machined center-lock wheel hub collar and internal axle bore from which the telescoping tyre-slasher shaft emerges.',
+      slasherBaseDir,
+      [hubBoreSeal]
+    );
+    axleAligned.add(hubCollar);
+
     // 2. Stage-1 Fluted Telescoping Outer Sleeve (emerges from inside the wheel hub bore when activated)
     const stage1Sleeve = new THREE.Group();
     stage1Sleeve.visible = false;
     axleAligned.add(stage1Sleeve);
 
+    const stage1Wipers: THREE.Mesh[] = [];
     const flutedSleeveMesh = register(
       new THREE.Mesh(stage1LatheGeo, chromeMat),
       `Rear ${cfg.side} Tyre Slasher Stage-1 Fluted Sleeve`,
       'Turned & Grooved High-Tensile Steel',
       'First-stage telescoping fluted steel sleeve emerging from the center of the rear wire-wheel hub.',
-      slasherSemanticDir
+      slasherStage1Dir,
+      stage1Wipers
     );
     stage1Sleeve.add(flutedSleeveMesh);
 
@@ -1936,6 +1958,7 @@ export function createQBranchGadgetsRig(
       );
       wiper.position.y = yGroove;
       stage1Sleeve.add(wiper);
+      stage1Wipers.push(wiper);
     }
 
     // 3. Stage-2 Telescoping Inner Shaft (dark-nitride guide journal + polished chrome shaft terminating at the back of the original knock-off spinner)
@@ -1950,15 +1973,6 @@ export function createQBranchGadgetsRig(
     nitrideJournal.position.y = 0.025;
     stage2Shaft.add(nitrideJournal);
 
-    const chromeExtensionShaft = register(
-      new THREE.Mesh(stage2ChromeGeo, chromeMat),
-      `Rear ${cfg.side} Tyre Slasher Telescoping Axle Shaft`,
-      'Mirror-Polished Hardened Chrome Steel',
-      'Second-stage telescoping drive shaft carrying the wheel’s 3-eared knock-off spinner outward to shred an adjacent car’s tires.',
-      slasherSemanticDir
-    );
-    stage2Shaft.add(chromeExtensionShaft);
-
     // Dark machined backing plate sealing the rear face of the separated knock-off spinner
     const spinnerBackingPlate = new THREE.Mesh(
       new THREE.CylinderGeometry(0.0275, 0.0235, 0.006, 28),
@@ -1966,6 +1980,16 @@ export function createQBranchGadgetsRig(
     );
     spinnerBackingPlate.position.y = 0.173;
     stage2Shaft.add(spinnerBackingPlate);
+
+    const chromeExtensionShaft = register(
+      new THREE.Mesh(stage2ChromeGeo, chromeMat),
+      `Rear ${cfg.side} Tyre Slasher Telescoping Axle Shaft`,
+      'Mirror-Polished Hardened Chrome Steel',
+      'Second-stage telescoping drive shaft carrying the wheel’s 3-eared knock-off spinner outward to shred an adjacent car’s tires.',
+      slasherStage2Dir,
+      [nitrideJournal, spinnerBackingPlate]
+    );
+    stage2Shaft.add(chromeExtensionShaft);
 
     // 4. Original 3-Eared Knock-Off Wheel Spinner (extracted live from the rear wheel GLB mesh!)
     // Sitting at (0,0,0) in spinGroup when stowed (100% identical to factory wheel hub),
@@ -1980,7 +2004,7 @@ export function createQBranchGadgetsRig(
           `Rear ${cfg.side} 3-Eared Knock-Off Tyre Slasher Spinner`,
           'Original Borrani 3-Eared Chrome Knock-Off',
           'The wheel’s actual 3-eared center-lock knock-off spinner: separates outward from the wheel hub on the telescoping axle shaft and spins at wheel speed.',
-          slasherSemanticDir
+          slasherHeadDir
         );
         spinnerHeadGroup.add(sm);
       }

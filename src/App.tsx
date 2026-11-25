@@ -390,603 +390,642 @@ export function App() {
   );
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-[#090b0f] text-zinc-100 font-sans">
-      <audio
-        ref={audioRef}
-        src="/audio/soundtrack.mp3"
-        loop
-        preload="none"
-        onPlay={() => setIsPlayingAudio(true)}
-        onPause={() => setIsPlayingAudio(false)}
-      />
-
-      {/* Top-Right Soundtrack Control Pill */}
-      <div
-        className="absolute top-4 right-4 z-30 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-950/85 border border-zinc-800/80 backdrop-blur-xl shadow-xl"
-        title="Background Soundtrack (Pixabay Free License · Auto-Loop)"
-      >
-        <button
-          onClick={togglePlayAudio}
-          className={`flex items-center justify-center w-6 h-6 rounded-lg transition cursor-pointer ${isPlayingAudio
-              ? 'bg-amber-500 text-zinc-950'
-              : 'bg-zinc-900 text-zinc-300 hover:text-white hover:bg-zinc-800'
-            }`}
-          title={isPlayingAudio ? 'Pause soundtrack' : 'Play soundtrack'}
-        >
-          {isPlayingAudio ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 ml-0.5" />}
-        </button>
-
-        <span className="text-[11px] font-medium text-zinc-300 tracking-wide hidden sm:inline">
-          007 Audio
-        </span>
-
-        <button
-          onClick={() => setIsMutedAudio((m) => !m)}
-          className="p-1 rounded-md text-zinc-400 hover:text-zinc-100 transition cursor-pointer"
-          title={isMutedAudio ? 'Unmute' : 'Mute'}
-        >
-          {isMutedAudio || audioVolume === 0 ? (
-            <VolumeX className="w-3.5 h-3.5 text-zinc-500" />
-          ) : (
-            <Volume2 className="w-3.5 h-3.5 text-amber-400" />
-          )}
-        </button>
-
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.01}
-          value={isMutedAudio ? 0 : audioVolume}
-          onChange={(e) => {
-            const v = parseFloat(e.target.value);
-            setAudioVolume(v);
-            if (v > 0 && isMutedAudio) setIsMutedAudio(false);
-          }}
-          className="w-16 accent-amber-500 cursor-pointer h-1 bg-zinc-800 rounded-lg"
-          aria-label="Soundtrack volume"
+      <div className="relative w-screen h-screen overflow-hidden bg-[#050505] text-[#F4F1EA]">
+        <audio
+          ref={audioRef}
+          src="/audio/soundtrack.mp3"
+          loop
+          preload="none"
+          onPlay={() => setIsPlayingAudio(true)}
+          onPause={() => setIsPlayingAudio(false)}
         />
-      </div>
 
-      {/* 3D Viewport */}
-      <DB5Viewport
-        explode={explode}
-        gunDeploy={gunDeploy}
-        isFiringGuns={isFiringGuns}
-        qBranchState={qBranchState}
-        visibleSubsystems={visibleSubsystems}
-        selectedPartId={selectedPartId}
-        hoveredPartId={hoveredPartId}
-        isolatedPartId={isolatedPartId}
-        qBranchHighlight={qBranchHighlight}
-        cameraTargetRequest={cameraTargetRequest}
-        onPartsLoaded={handlePartsLoaded}
-        onLoadProgress={handleLoadProgress}
-        onSelectPart={handleSelectPart}
-        onHoverPart={handleHoverPart}
-        onCabinAction={handleCabinAction}
-      />
-
-      {/* Loading Overlay */}
-      {loading && (
-        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#090b0f]/90 backdrop-blur-md">
-          <div className="w-10 h-10 border-2 border-amber-500/30 border-t-amber-400 rounded-full animate-spin mb-4" />
-          <p className="text-sm font-medium tracking-widest uppercase text-zinc-300">
-            Loading 1964 Aston Martin DB5 Vantage
-          </p>
-          <p className="text-xs text-zinc-400 mt-1">
-            {loadProgress > 0 && loadProgress < 100
-              ? `Streaming 3D Coachwork & Q-Branch Systems… ${loadProgress}%`
-              : 'Initializing Q-Branch assemblies & studio PBR shaders…'}
-          </p>
-          <div className="w-56 h-1.5 bg-zinc-800/90 rounded-full overflow-hidden mt-3 border border-zinc-700/50">
-            <div
-              className="h-full bg-amber-400 transition-all duration-150 ease-out"
-              style={{ width: `${Math.max(8, loadProgress)}%` }}
-            />
-          </div>
+        {/* 35mm Film-Gate, Silver-Gelatin Grain & Optical Projector Vignette (Never obscures 3D car) */}
+        <div className="pointer-events-none fixed inset-0 z-10">
+          <div className="absolute inset-0 gf-projector-vignette" />
+          <div className="absolute inset-0 gf-film-grain opacity-75" />
+          {/* 4 Optical Gate Corner Registration Marks */}
+          <div className="absolute top-3 left-3 w-4 h-4 border-t border-l border-[#D4AF37]/45" />
+          <div className="absolute top-3 right-3 w-4 h-4 border-t border-r border-[#D4AF37]/45" />
+          <div className="absolute bottom-3 left-3 w-4 h-4 border-b border-l border-[#D4AF37]/45" />
+          <div className="absolute bottom-3 right-3 w-4 h-4 border-b border-r border-[#D4AF37]/45" />
         </div>
-      )}
 
-      {/* Error Overlay */}
-      {loadError && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 p-6">
-          <div className="max-w-md rounded-xl border border-red-500/40 bg-zinc-900 p-6 text-center">
-            <p className="text-red-400 font-semibold mb-2">Failed to load 3D model</p>
-            <p className="text-xs text-zinc-400">{loadError}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Hover Tooltip */}
-      {hoveredPart && hoverPos && (
+        {/* Top-Right Soundtrack Control Pill */}
         <div
-          className="pointer-events-none fixed z-30 px-2.5 py-1.5 rounded-lg bg-zinc-950/90 border border-zinc-700/70 backdrop-blur-md shadow-xl text-xs"
-          style={{
-            left: hoverPos.x + 14,
-            top: hoverPos.y + 14,
-          }}
+          className="absolute top-4 right-4 z-30 flex items-center gap-2.5 px-3 py-1.5 gf-panel"
+          title="Background Soundtrack (Pixabay Free License · Auto-Loop)"
         >
-          <div className="flex items-center gap-1.5 font-medium text-zinc-100">
-            <span
-              className="w-2 h-2 rounded-full shrink-0"
-              style={{ backgroundColor: SUBSYSTEM_MAP[hoveredPart.subsystem].color }}
+          <button
+            onClick={togglePlayAudio}
+          className={`flex items-center justify-center w-6 h-6 rounded-[1px] transition cursor-pointer ${isPlayingAudio
+              ? 'bg-[#D4AF37] text-[#050505]'
+              : 'bg-[#121214] text-[#F4F1EA]/80 hover:text-[#F4F1EA] hover:bg-[#1c1c20] border border-[#F4F1EA]/15'
+              }`}
+            title={isPlayingAudio ? 'Pause soundtrack' : 'Play soundtrack'}
+          >
+            {isPlayingAudio ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 ml-0.5" />}
+          </button>
+
+            <span className="font-display-bj text-[11px] font-semibold text-[#F4F1EA] tracking-[0.16em] hidden sm:inline">
+              007 AUDIO
+            </span>
+
+            <button
+              onClick={() => setIsMutedAudio((m) => !m)}
+              className="p-1 text-[#F4F1EA]/60 hover:text-[#D4AF37] transition cursor-pointer"
+              title={isMutedAudio ? 'Unmute' : 'Mute'}
+            >
+              {isMutedAudio || audioVolume === 0 ? (
+            <VolumeX className="w-3.5 h-3.5 text-[#F4F1EA]/40" />
+              ) : (
+            <Volume2 className="w-3.5 h-3.5 text-[#D4AF37]" />
+              )}
+            </button>
+
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={isMutedAudio ? 0 : audioVolume}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value);
+                setAudioVolume(v);
+                if (v > 0 && isMutedAudio) setIsMutedAudio(false);
+              }}
+              className="w-16 gf-slider cursor-pointer"
+              aria-label="Soundtrack volume"
             />
-            {hoveredPart.label}
-            {hoveredPart.isQBranch && (
-              <span className="ml-1 px-1 py-0.5 text-[10px] font-bold rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+        </div>
+
+        {/* 3D Viewport */}
+        <DB5Viewport
+          explode={explode}
+          gunDeploy={gunDeploy}
+          isFiringGuns={isFiringGuns}
+          qBranchState={qBranchState}
+          visibleSubsystems={visibleSubsystems}
+          selectedPartId={selectedPartId}
+          hoveredPartId={hoveredPartId}
+          isolatedPartId={isolatedPartId}
+          qBranchHighlight={qBranchHighlight}
+          cameraTargetRequest={cameraTargetRequest}
+          onPartsLoaded={handlePartsLoaded}
+          onLoadProgress={handleLoadProgress}
+          onSelectPart={handleSelectPart}
+          onHoverPart={handleHoverPart}
+          onCabinAction={handleCabinAction}
+        />
+
+        {/* Goldfinger 1964 Optical Projector Title-Card Loading Overlay */}
+        {loading && (
+              <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#050505]">
+                <div className="gf-film-grain absolute inset-0 pointer-events-none" />
+                <div className="relative px-10 py-8 border border-[#D4AF37]/40 bg-[#050505] max-w-md w-full mx-4 text-center">
+                  <div className="absolute -top-1.5 -left-1.5 w-3 h-3 border-t-2 border-l-2 border-[#D4AF37]" />
+                  <div className="absolute -top-1.5 -right-1.5 w-3 h-3 border-t-2 border-r-2 border-[#D4AF37]" />
+                  <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 border-b-2 border-l-2 border-[#D4AF37]" />
+                  <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 border-b-2 border-r-2 border-[#D4AF37]" />
+
+                  <div className="font-mono-bj text-[10px] tracking-[0.35em] uppercase text-[#D4AF37]/80 mb-2">
+                    MI6 · Q-BRANCH TECHNICAL DOSSIER
+                  </div>
+                  <h2 className="font-display-bj text-4xl font-bold tracking-[0.14em] text-[#D4AF37]">
+                    GOLDFINGER
+                  </h2>
+                  <p className="font-display-bj text-sm tracking-[0.26em] text-[#F4F1EA] mt-1">
+                    1964 ASTON MARTIN DB5 VANTAGE
+                  </p>
+
+                  <div className="w-full h-[2px] bg-[#F4F1EA]/15 mt-6 overflow-hidden">
+                    <div
+                      className="h-full bg-[#D4AF37] transition-all duration-150 ease-out"
+                      style={{ width: `${Math.max(8, loadProgress)}%` }}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between mt-2.5 font-mono-bj text-[10px] tracking-widest uppercase text-[#F4F1EA]/55">
+                    <span>
+                      {loadProgress > 0 && loadProgress < 100
+                        ? 'PROJECTING COACHWORK'
+                        : 'CALIBRATING SHADERS'}
+                    </span>
+                    <span className="text-[#D4AF37] font-semibold">
+                      {loadProgress > 0 ? `${loadProgress}%` : 'INIT'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+      )}
+
+              {/* Error Overlay */}
+              {loadError && (
+                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#050505]/95 p-6">
+                      <div className="max-w-md gf-panel border-[#C42B2B]/60 p-6 text-center">
+                        <p className="font-display-bj text-lg tracking-wider text-[#C42B2B] mb-2">
+                          TRANSMISSION FAILURE // MODEL LOAD ERROR
+                        </p>
+                        <p className="font-mono-bj text-xs text-[#F4F1EA]/70">{loadError}</p>
+                      </div>
+                    </div>
+      )}
+
+                    {/* Hover Tooltip */}
+                    {hoveredPart && hoverPos && (
+                      <div
+                        className="pointer-events-none fixed z-30 px-2.5 py-1.5 gf-panel-gold text-xs"
+                        style={{
+                          left: hoverPos.x + 14,
+                          top: hoverPos.y + 14,
+                        }}
+                      >
+                          <div className="flex items-center gap-1.5 font-display-bj text-xs tracking-wider text-[#F4F1EA]">
+                            <span
+                              className="w-2 h-2 rounded-[1px] shrink-0"
+                              style={{ backgroundColor: SUBSYSTEM_MAP[hoveredPart.subsystem].color }}
+                            />
+                            {hoveredPart.label}
+                            {hoveredPart.isQBranch && (
+              <span className="ml-1 px-1 py-0.5 font-mono-bj text-[9px] font-bold bg-[#D4AF37] text-[#050505]">
                 007
               </span>
             )}
           </div>
-          <div className="text-[11px] text-zinc-400 mt-0.5">
+          <div className="font-mono-bj text-[10px] text-[#F4F1EA]/65 mt-0.5">
             {SUBSYSTEM_MAP[hoveredPart.subsystem].shortName} · {hoveredPart.materialLabel}
           </div>
         </div>
-      )}
+                            )}
 
-      {/* Top-Left Collapse Button when sidebar is closed */}
-      {!sidebarOpen && (
-        <button
-          onClick={() => setSidebarOpen(true)}
-          className="absolute top-4 left-4 z-20 flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900/85 hover:bg-zinc-800/90 border border-zinc-700/60 backdrop-blur-md shadow-lg text-xs font-medium text-zinc-200 transition cursor-pointer"
-        >
-          <Layers className="w-4 h-4 text-amber-400" />
-          <span>DB5 Atlas</span>
-          <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />
-        </button>
-      )}
+                            {/* Top-Left Collapse Button when sidebar is closed */}
+                            {!sidebarOpen && (
+                              <button
+                                onClick={() => setSidebarOpen(true)}
+                                className="absolute top-4 left-4 z-20 flex items-center gap-2 px-3 py-2 gf-panel-gold hover:bg-[#121214] text-xs font-display-bj tracking-[0.16em] text-[#F4F1EA] transition cursor-pointer"
+                              >
+                                <Layers className="w-4 h-4 text-[#D4AF37]" />
+                                <span>DB5 ATLAS</span>
+                                <ChevronRight className="w-3.5 h-3.5 text-[#D4AF37]" />
+                              </button>
+                            )}
 
-      {/* Left Sidebar */}
-      <aside
-        className={`absolute top-4 left-4 bottom-4 z-20 w-80 flex flex-col rounded-2xl bg-zinc-950/82 border border-zinc-800/80 backdrop-blur-xl shadow-2xl transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-[120%]'
-          }`}
-      >
-        {/* Header */}
-        <div className="p-4 border-b border-zinc-800/80 flex items-start justify-between gap-2">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold tracking-[0.2em] uppercase text-amber-400">
-                007 // DB5 ATLAS
-              </span>
-            </div>
-            <h1 className="text-sm font-semibold text-zinc-100 mt-0.5">
-              1964 Aston Martin DB5 Vantage
-            </h1>
-            <p className="text-[11px] text-zinc-400 mt-0.5">
-              {parts.length} meshes · {(totalTriangles / 1000).toFixed(0)}k triangles
-            </p>
-          </div>
-          <button
-            onClick={() => setSidebarOpen(false)}
-            title="Collapse sidebar"
-            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/70 transition cursor-pointer"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-        </div>
+                            {/* Left Sidebar */}
+                            <aside
+        className={`absolute top-4 left-4 bottom-4 z-20 w-80 flex flex-col gf-panel transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-[120%]'
+                                }`}
+                            >
+                              {/* Header */}
+                                <div className="p-4 border-b border-[#D4AF37]/25 flex items-start justify-between gap-2 bg-[#080809]">
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="px-1.5 py-0.5 bg-[#D4AF37] text-[#050505] font-mono-bj text-[10px] font-bold tracking-[0.18em]">
+                                          007
+                                        </span>
+                                        <span className="font-display-bj text-xs font-bold tracking-[0.22em] text-[#D4AF37]">
+                                          DB5 // GOLDFINGER ATLAS
+                                        </span>
+                                    </div>
+                                      <h1 className="font-display-bj text-base font-bold tracking-[0.06em] text-[#F4F1EA] mt-1.5">
+                                        1964 ASTON MARTIN DB5
+                                      </h1>
+                                        <p className="font-mono-bj text-[10px] text-[#F4F1EA]/55 mt-0.5">
+                                          {parts.length} MESHES · {(totalTriangles / 1000).toFixed(0)}K TRIS
+                                        </p>
+                                      </div>
+                                      <button
+                                        onClick={() => setSidebarOpen(false)}
+                                        title="Collapse sidebar"
+                                        className="p-1.5 rounded-[1px] text-[#F4F1EA]/60 hover:text-[#D4AF37] hover:bg-[#141416] transition cursor-pointer"
+                                      >
+                                        <ChevronLeft className="w-4 h-4" />
+                                      </button>
+                                  </div>
 
-        {/* Search */}
-        <div className="p-3 border-b border-zinc-800/70">
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search parts, materials, Q-Branch…"
-              className="w-full pl-8 pr-7 py-1.5 rounded-lg bg-zinc-900/90 border border-zinc-700/60 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-amber-500/60"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-200 cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        </div>
+                                  {/* Search */}
+                                    <div className="p-3 border-b border-[#F4F1EA]/12">
+                                      <div className="relative">
+                                        <Search className="w-3.5 h-3.5 text-[#D4AF37]/75 absolute left-3 top-1/2 -translate-y-1/2" />
+                                        <input
+                                          type="text"
+                                          value={searchQuery}
+                                          onChange={(e) => setSearchQuery(e.target.value)}
+                                          placeholder="SEARCH PARTS, Q-BRANCH…"
+                                          className="w-full pl-8 pr-7 py-1.5 rounded-[1px] bg-[#0c0c0e] border border-[#F4F1EA]/18 font-mono-bj text-[11px] text-[#F4F1EA] placeholder:text-[#F4F1EA]/35 focus:outline-none focus:border-[#D4AF37]"
+                                        />
+                                        {searchQuery && (
+                                          <button
+                                            onClick={() => setSearchQuery('')}
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-[#F4F1EA]/50 hover:text-[#D4AF37] cursor-pointer"
+                                          >
+                                            <X className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
 
-        {/* Subsystems */}
-        <div className="p-3 border-b border-zinc-800/70">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-              Subsystems
-            </span>
-            <button
-              onClick={showAllSubsystems}
-              className="text-[11px] text-amber-400 hover:text-amber-300 cursor-pointer"
-            >
-              Show all
-            </button>
-          </div>
-          <div className="grid grid-cols-1 gap-1">
-            {SUBSYSTEMS.map((sub) => {
-              const active = visibleSubsystems.has(sub.id);
-              return (
-                <button
-                  key={sub.id}
-                  onClick={() => toggleSubsystem(sub.id)}
-                  className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition cursor-pointer ${active
-                      ? 'bg-zinc-900/90 text-zinc-100 border border-zinc-700/50'
-                      : 'bg-transparent text-zinc-500 border border-transparent hover:bg-zinc-900/40'
-                    }`}
-                >
-                  <span className="flex items-center gap-2 truncate">
-                    <span
-                      className="w-2 h-2 rounded-full shrink-0 transition-opacity"
-                      style={{
-                        backgroundColor: sub.color,
-                        opacity: active ? 1 : 0.25,
-                      }}
-                    />
-                    <span className="truncate">{sub.name}</span>
-                  </span>
-                  <span className="flex items-center gap-1.5 text-[11px] text-zinc-500 shrink-0">
-                    <span>{subsystemCounts[sub.id]}</span>
-                    {active ? (
-                      <Eye className="w-3 h-3 text-zinc-400" />
-                    ) : (
-                      <EyeOff className="w-3 h-3 text-zinc-600" />
-                    )}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+                                    {/* Subsystems */}
+                                      <div className="p-3 border-b border-[#F4F1EA]/12">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className="font-mono-bj text-[10px] font-bold uppercase tracking-[0.2em] text-[#F4F1EA]/55">
+                                              SUBSYSTEMS
+                                            </span>
+                                            <button
+                                              onClick={showAllSubsystems}
+                                              className="font-mono-bj text-[10px] uppercase tracking-wider text-[#D4AF37] hover:text-[#E6C75A] cursor-pointer"
+                                            >
+                                              SHOW ALL
+                                            </button>
+                                        </div>
+                                        <div className="grid grid-cols-1 gap-1">
+                                          {SUBSYSTEMS.map((sub) => {
+                                            const active = visibleSubsystems.has(sub.id);
+                                            return (
+                                              <button
+                                                key={sub.id}
+                                                onClick={() => toggleSubsystem(sub.id)}
+                  className={`flex items-center justify-between px-2.5 py-1.5 rounded-[1px] text-xs transition cursor-pointer ${active
+                                                  ? 'bg-[#101012] text-[#F4F1EA] border border-[#F4F1EA]/15'
+                                                  : 'bg-transparent text-[#F4F1EA]/35 border border-transparent hover:bg-[#101012]/50'
+                                                  }`}
+                                              >
+                                                <span className="flex items-center gap-2 truncate">
+                                                  <span
+                                                    className="w-2 h-2 rounded-[1px] shrink-0 transition-opacity"
+                                                    style={{
+                                                      backgroundColor: sub.color,
+                                                      opacity: active ? 1 : 0.25,
+                                                    }}
+                                                  />
+                                                  <span className="truncate font-medium">{sub.name}</span>
+                                                </span>
+                                                  <span className="flex items-center gap-1.5 font-mono-bj text-[10px] text-[#F4F1EA]/50 shrink-0">
+                                                    <span>{subsystemCounts[sub.id]}</span>
+                                                    {active ? (
+                      <Eye className="w-3 h-3 text-[#D4AF37]/80" />
+                                                    ) : (
+                      <EyeOff className="w-3 h-3 text-[#F4F1EA]/25" />
+                                                    )}
+                                                  </span>
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
 
-        {/* Parts Inventory */}
-        <div className="flex-1 min-h-0 flex flex-col">
-          <div className="px-3 pt-2.5 pb-1.5 flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-              Components ({filteredParts.length})
-            </span>
-            <button
-              onClick={() => setQBranchHighlight((v) => !v)}
-              className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border transition cursor-pointer ${qBranchHighlight
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
-                  : 'bg-zinc-900 text-zinc-400 border-zinc-700/60 hover:text-zinc-200'
-                }`}
-              title="Highlight 007 Q-Branch modified parts"
-            >
-              <Sparkles className="w-2.5 h-2.5" />
-              007 Spec
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-1">
-            {filteredParts.map((part) => {
-              const isSelected = part.id === selectedPartId;
-              const isVisible = visibleSubsystems.has(part.subsystem);
-              return (
-                <button
-                  key={part.id}
-                  onClick={() => {
-                    if (!isVisible) {
-                      setVisibleSubsystems((prev) => new Set(prev).add(part.subsystem));
-                    }
-                    setSelectedPartId(part.id);
-                  }}
-                  onMouseEnter={() => setHoveredPartId(part.id)}
-                  onMouseLeave={() => setHoveredPartId(null)}
-                  className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition cursor-pointer border ${isSelected
-                      ? 'bg-amber-500/15 border-amber-500/50 text-amber-100'
-                      : 'bg-zinc-900/40 border-transparent hover:bg-zinc-900/80 text-zinc-300'
-                    } ${!isVisible ? 'opacity-45' : ''}`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-2 truncate font-medium">
-                      <span
-                        className="w-1.5 h-1.5 rounded-full shrink-0"
-                        style={{ backgroundColor: SUBSYSTEM_MAP[part.subsystem].color }}
-                      />
-                      <span className="truncate">{part.label}</span>
-                    </span>
-                    {part.isQBranch && (
-                      <span className="px-1 py-0.2 text-[9px] font-bold rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
+                                      {/* Parts Inventory */}
+                                      <div className="flex-1 min-h-0 flex flex-col">
+                                        <div className="px-3 pt-2.5 pb-1.5 flex items-center justify-between">
+                                            <span className="font-mono-bj text-[10px] font-bold uppercase tracking-[0.2em] text-[#F4F1EA]/55">
+                                              COMPONENTS ({filteredParts.length})
+                                            </span>
+                                            <button
+                                              onClick={() => setQBranchHighlight((v) => !v)}
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded-[1px] font-mono-bj text-[10px] font-bold border transition cursor-pointer ${qBranchHighlight
+                                                ? 'bg-[#D4AF37] text-[#050505] border-[#D4AF37]'
+                                                : 'bg-[#0e0e10] text-[#D4AF37] border-[#D4AF37]/35 hover:border-[#D4AF37]'
+                                                }`}
+                                              title="Highlight 007 Q-Branch modified parts"
+                                            >
+                                              <Sparkles className="w-2.5 h-2.5" />
+                                              007 SPEC
+                                            </button>
+                                        </div>
+                                        <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-1">
+                                          {filteredParts.map((part) => {
+                                            const isSelected = part.id === selectedPartId;
+                                            const isVisible = visibleSubsystems.has(part.subsystem);
+                                            return (
+                                              <button
+                                                key={part.id}
+                                                onClick={() => {
+                                                  if (!isVisible) {
+                                                    setVisibleSubsystems((prev) => new Set(prev).add(part.subsystem));
+                                                  }
+                                                  setSelectedPartId(part.id);
+                                                }}
+                                                onMouseEnter={() => setHoveredPartId(part.id)}
+                                                onMouseLeave={() => setHoveredPartId(null)}
+                                                className={`w-full text-left px-2.5 py-2 rounded-[1px] text-xs transition cursor-pointer border ${isSelected
+                                                  ? 'bg-[#D4AF37]/15 border-[#D4AF37] text-[#F4F1EA]'
+                                                  : 'bg-[#0b0b0d] border-transparent hover:border-[#F4F1EA]/15 text-[#F4F1EA]/85'
+                                                  } ${!isVisible ? 'opacity-40' : ''}`}
+                                              >
+                                                <div className="flex items-center justify-between gap-2">
+                                                  <span className="flex items-center gap-2 truncate font-medium">
+                                                    <span
+                                                      className="w-1.5 h-1.5 rounded-[1px] shrink-0"
+                                                      style={{ backgroundColor: SUBSYSTEM_MAP[part.subsystem].color }}
+                                                    />
+                                                    <span className="truncate">{part.label}</span>
+                                                  </span>
+                                                  {part.isQBranch && (
+                      <span className="px-1 py-0.2 font-mono-bj text-[9px] font-bold bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/45 shrink-0">
                         007
                       </span>
                     )}
                   </div>
-                  <div className="text-[10px] text-zinc-500 pl-3.5 truncate mt-0.5">
+                  <div className="font-mono-bj text-[10px] text-[#F4F1EA]/45 pl-3.5 truncate mt-0.5">
                     {part.materialLabel}
                   </div>
                 </button>
-              );
+                                                  );
             })}
-          </div>
-        </div>
+                                                </div>
+                                              </div>
       </aside>
 
-      {/* Right Selected Part Inspector */}
-      {selectedPart && (
-        <aside className="absolute top-16 right-4 z-20 w-80 rounded-2xl bg-zinc-950/85 border border-zinc-800/80 backdrop-blur-xl shadow-2xl p-4">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <span
-                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider border"
-                style={{
-                  color: SUBSYSTEM_MAP[selectedPart.subsystem].color,
-                  borderColor: `${SUBSYSTEM_MAP[selectedPart.subsystem].color}44`,
-                  backgroundColor: `${SUBSYSTEM_MAP[selectedPart.subsystem].color}15`,
-                }}
-              >
-                {SUBSYSTEM_MAP[selectedPart.subsystem].shortName}
-              </span>
-              <h2 className="text-sm font-semibold text-zinc-100 mt-2">
-                {selectedPart.label}
-              </h2>
-            </div>
-            <button
-              onClick={() => {
-                setSelectedPartId(null);
-                setIsolatedPartId(null);
-              }}
-              className="p-1 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/70 cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+                                        {/* Right Selected Part Inspector */}
+                                        {selectedPart && (
+                                            <aside className="absolute top-16 right-4 z-20 w-80 gf-panel-gold p-4">
+                                              <div className="flex items-start justify-between gap-2">
+                                                <div>
+                                                  <span
+                                                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[1px] font-mono-bj text-[9px] font-bold uppercase tracking-[0.18em] border"
+                                                    style={{
+                                                      color: SUBSYSTEM_MAP[selectedPart.subsystem].color,
+                                                      borderColor: `${SUBSYSTEM_MAP[selectedPart.subsystem].color}55`,
+                                                      backgroundColor: `${SUBSYSTEM_MAP[selectedPart.subsystem].color}14`,
+                                                    }}
+                                                  >
+                                                    {SUBSYSTEM_MAP[selectedPart.subsystem].shortName}
+                                                  </span>
+                                                    <h2 className="font-display-bj text-base font-bold tracking-[0.05em] text-[#F4F1EA] mt-2">
+                                                      {selectedPart.label}
+                                                    </h2>
+                                                </div>
+                                                <button
+                                                  onClick={() => {
+                                                    setSelectedPartId(null);
+                                                    setIsolatedPartId(null);
+                                                  }}
+                                                  className="p-1 rounded-[1px] text-[#F4F1EA]/55 hover:text-[#D4AF37] hover:bg-[#141416] cursor-pointer"
+                                                >
+                                                  <X className="w-4 h-4" />
+                                                </button>
+                                              </div>
 
-          <div className="mt-3 space-y-2 text-xs">
-            <div className="flex justify-between py-1.5 border-b border-zinc-800/80">
-              <span className="text-zinc-500">Material</span>
-              <span className="text-zinc-200 font-medium">{selectedPart.materialLabel}</span>
-            </div>
-            <div className="flex justify-between py-1.5 border-b border-zinc-800/80">
-              <span className="text-zinc-500">Geometry</span>
-              <span className="text-zinc-200 font-mono text-[11px]">
-                {selectedPart.triangleCount.toLocaleString()} tris
-              </span>
-            </div>
-            <div className="flex justify-between py-1.5 border-b border-zinc-800/80">
-              <span className="text-zinc-500">Node ID</span>
-              <span className="text-zinc-400 font-mono text-[10px] truncate max-w-[170px]" title={selectedPart.meshName}>
-                {selectedPart.meshName}
-              </span>
-            </div>
-          </div>
+                                              <div className="mt-3 space-y-2 text-xs">
+                                                  <div className="flex justify-between py-1.5 border-b border-[#F4F1EA]/12">
+                                                    <span className="font-mono-bj text-[10px] uppercase tracking-wider text-[#F4F1EA]/50">Material</span>
+                                                    <span className="text-[#F4F1EA] font-medium">{selectedPart.materialLabel}</span>
+                                                  </div>
+                                                      <div className="flex justify-between py-1.5 border-b border-[#F4F1EA]/12">
+                                                        <span className="font-mono-bj text-[10px] uppercase tracking-wider text-[#F4F1EA]/50">Geometry</span>
+                                                        <span className="text-[#D4AF37] font-mono-bj text-[11px]">
+                                                          {selectedPart.triangleCount.toLocaleString()} TRIS
+                                                        </span>
+                                                      </div>
+                                                          <div className="flex justify-between py-1.5 border-b border-[#F4F1EA]/12">
+                                                            <span className="font-mono-bj text-[10px] uppercase tracking-wider text-[#F4F1EA]/50">Node ID</span>
+                                                            <span className="text-[#F4F1EA]/65 font-mono-bj text-[10px] truncate max-w-[170px]" title={selectedPart.meshName}>
+                                                              {selectedPart.meshName}
+                                                            </span>
+                                                          </div>
+                                                      </div>
 
-          {selectedPart.qBranchNote && (
-            <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
-              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-amber-400 mb-1">
-                <ShieldAlert className="w-3.5 h-3.5" />
-                Q-Branch Specification
-              </div>
-              <p className="text-xs text-amber-100/90 leading-relaxed">
-                {selectedPart.qBranchNote}
-              </p>
-            </div>
+                                                      {selectedPart.qBranchNote && (
+                                                            <div className="mt-3 p-3 bg-[#D4AF37]/8 border-l-2 border-[#D4AF37]">
+                                                              <div className="flex items-center gap-1.5 font-mono-bj text-[10px] font-bold uppercase tracking-[0.18em] text-[#D4AF37] mb-1">
+                                                                <ShieldAlert className="w-3.5 h-3.5" />
+                                                                Q-Branch Specification
+                                                              </div>
+                                                                <p className="text-xs text-[#F4F1EA]/85 leading-relaxed">
+                                                                  {selectedPart.qBranchNote}
+                                                                </p>
+                                                            </div>
           )}
 
-          <div className="mt-4 flex gap-2">
-            <button
-              onClick={() =>
-                setIsolatedPartId((prev) =>
-                  prev === selectedPart.id ? null : selectedPart.id
-                )
-              }
-              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border transition cursor-pointer ${isolatedPartId === selectedPart.id
-                  ? 'bg-amber-500 text-zinc-950 border-amber-400'
-                  : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border-zinc-700/70'
-                }`}
-            >
-              <Maximize2 className="w-3.5 h-3.5" />
-              {isolatedPartId === selectedPart.id ? 'Exit Isolate' : 'Isolate Part'}
-            </button>
-            <button
-              onClick={() => focusPart(selectedPart)}
-              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-700/70 transition cursor-pointer"
-              title="Focus camera on part"
-            >
-              <Crosshair className="w-3.5 h-3.5" />
-              Focus
-            </button>
-          </div>
-        </aside>
+                                                            <div className="mt-4 flex gap-2">
+                                                              <button
+                                                                onClick={() =>
+                                                                  setIsolatedPartId((prev) =>
+                                                                    prev === selectedPart.id ? null : selectedPart.id
+                                                                  )
+                                                                }
+              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-[1px] font-display-bj text-xs font-semibold tracking-[0.12em] border transition cursor-pointer ${isolatedPartId === selectedPart.id
+                                                                  ? 'bg-[#D4AF37] text-[#050505] border-[#D4AF37]'
+                                                                  : 'bg-[#0e0e10] hover:bg-[#17171a] text-[#F4F1EA] border-[#F4F1EA]/20'
+                                                                  }`}
+                                                              >
+                                                                <Maximize2 className="w-3.5 h-3.5" />
+                                                                {isolatedPartId === selectedPart.id ? 'EXIT ISOLATE' : 'ISOLATE PART'}
+                                                              </button>
+                                                              <button
+                                                                onClick={() => focusPart(selectedPart)}
+                                                                className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-[1px] font-display-bj text-xs font-semibold tracking-[0.12em] bg-[#0e0e10] hover:bg-[#17171a] text-[#D4AF37] border border-[#D4AF37]/40 transition cursor-pointer"
+                                                                title="Focus camera on part"
+                                                              >
+                                                                <Crosshair className="w-3.5 h-3.5" />
+                                                                FOCUS
+                                                              </button>
+                                                            </div>
+                                                          </aside>
       )}
 
-      {/* Bottom Floating Control Dock */}
-      <div
-        className={`absolute bottom-4 z-20 left-1/2 -translate-x-1/2 flex flex-col gap-2.5 max-w-[calc(100vw-2rem)] ${sidebarOpen ? 'lg:left-[calc(50%+10rem)]' : ''
-          }`}
-      >
-        {/* Presets Row */}
-        <div className="flex items-center justify-center flex-wrap gap-1.5 px-2 py-1.5 rounded-2xl bg-zinc-950/82 border border-zinc-800/80 backdrop-blur-xl shadow-2xl">
-          {PRESETS.map((preset) => {
-            const active = activePresetId === preset.id;
-            return (
-              <button
-                key={preset.id}
-                onClick={() => applyPreset(preset)}
-                title={preset.description}
-                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer ${active
-                    ? 'bg-amber-500 text-zinc-950 shadow-sm'
-                    : 'text-zinc-300 hover:text-white hover:bg-zinc-800/80'
-                  }`}
-              >
-                {preset.label}
-              </button>
-            );
-          })}
-        </div>
+                                                          {/* Bottom Floating Control Dock */}
+                                                          <div
+        className={`absolute bottom-4 z-20 left-1/2 -translate-x-1/2 flex flex-col gap-2 max-w-[calc(100vw-2rem)] ${sidebarOpen ? 'lg:left-[calc(50%+10rem)]' : ''
+                                                              }`}
+                                                          >
+                                                            {/* Presets Row */}
+                                                              <div className="flex items-center justify-center flex-wrap gap-1 px-2 py-1.5 gf-panel">
+                                                                {PRESETS.map((preset) => {
+                                                                  const active = activePresetId === preset.id;
+                                                                  return (
+                                                                    <button
+                                                                      key={preset.id}
+                                                                      onClick={() => applyPreset(preset)}
+                                                                      title={preset.description}
+                className={`px-3 py-1 rounded-[1px] font-display-bj text-xs font-semibold tracking-[0.12em] transition cursor-pointer ${active
+                                                                        ? 'bg-[#D4AF37] text-[#050505]'
+                                                                        : 'text-[#F4F1EA]/75 hover:text-[#F4F1EA] hover:bg-[#141416]'
+                                                                        }`}
+                                                                    >
+                                                                      {preset.label}
+                                                                    </button>
+                                                                  );
+                                                                })}
+                                                              </div>
 
-        {/* Sliders & Controls */}
-        <div className="flex flex-col gap-2 px-4 py-2.5 rounded-2xl bg-zinc-950/85 border border-zinc-800/80 backdrop-blur-xl shadow-2xl min-w-[340px] sm:min-w-[490px]">
-          {/* Explode Slider Row */}
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-xs font-medium text-zinc-300 shrink-0 w-24">
-              <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400" />
-              <span>Explode</span>
-            </div>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={explode}
-              onChange={(e) => {
-                setActivePresetId('');
-                setExplode(parseFloat(e.target.value));
-              }}
-              className="flex-1 accent-amber-500 cursor-pointer h-1.5 bg-zinc-800 rounded-lg"
-            />
-            <span className="text-xs font-mono text-amber-400 w-10 text-right shrink-0">
-              {Math.round(explode * 100)}%
-            </span>
-            <div className="w-px h-4 bg-zinc-800" />
-            <button
-              onClick={resetCamera}
-              title="Reset camera view"
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs text-zinc-300 hover:text-white hover:bg-zinc-800/80 transition cursor-pointer shrink-0"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Reset</span>
-            </button>
-          </div>
+                                                              {/* Sliders & Controls */}
+                                                                <div className="flex flex-col gap-2 px-4 py-2.5 gf-panel min-w-[340px] sm:min-w-[500px]">
+                                                                  {/* Kinetic Brownjohn Explode Slider Row ("EXPLODE" spreads apart as slider increases) */}
+                                                                  <div className="flex items-center gap-4">
+                                                                      <div className="flex items-center gap-2 text-xs text-[#F4F1EA] shrink-0 w-28">
+                                                                        <SlidersHorizontal className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
+                                                                        <span
+                                                                          className="font-display-bj font-bold transition-all duration-150"
+                                                                          style={{ letterSpacing: `${0.06 + explode * 0.34}em` }}
+                                                                        >
+                                                                          EXPLODE
+                                                                        </span>
+                                                                      </div>
+                                                                      <input
+                                                                        type="range"
+                                                                        min={0}
+                                                                        max={1}
+                                                                        step={0.01}
+                                                                        value={explode}
+                                                                        onChange={(e) => {
+                                                                          setActivePresetId('');
+                                                                          setExplode(parseFloat(e.target.value));
+                                                                        }}
+                                                                        className="flex-1 gf-slider cursor-pointer"
+                                                                      />
+                                                                        <span className="font-mono-bj text-xs text-[#D4AF37] w-10 text-right shrink-0">
+                                                                          {Math.round(explode * 100)}%
+                                                                        </span>
+                                                                        <div className="w-px h-4 bg-[#F4F1EA]/15" />
+                                                                        <button
+                                                                          onClick={resetCamera}
+                                                                          title="Reset camera view"
+                                                                          className="bj-stow-hover flex items-center gap-1.5 px-2.5 py-1 rounded-[1px] font-display-bj text-xs tracking-[0.1em] text-[#F4F1EA]/75 hover:text-[#F4F1EA] hover:bg-[#141416] transition cursor-pointer shrink-0"
+                                                                        >
+                                                                          <RotateCcw className="w-3.5 h-3.5" />
+                                                                          <span className="hidden sm:inline">RESET</span>
+                                                                        </button>
+                                                                    </div>
 
-          {/* Q-Branch Wing Guns Deployment Slider Row */}
-          <div className="flex items-center gap-4 pt-1.5 border-t border-zinc-800/70">
-            <div className="flex items-center gap-2 text-xs font-medium text-orange-300 shrink-0 w-24">
-              <Target className="w-3.5 h-3.5 text-orange-400" />
-              <span>Wing Guns</span>
-            </div>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={gunDeploy}
-              onChange={(e) => {
-                const v = parseFloat(e.target.value);
-                setGunDeploy(v);
-                setQBranchState((prev) => ({ ...prev, wingGuns: v >= 0.5 }));
-                if (v < 0.85) setIsFiringGuns(false);
-              }}
-              className="flex-1 accent-orange-500 cursor-pointer h-1.5 bg-zinc-800 rounded-lg"
-            />
-            <span className="text-xs font-mono text-orange-400 w-10 text-right shrink-0">
-              {Math.round(gunDeploy * 100)}%
-            </span>
-            <div className="w-px h-4 bg-zinc-800" />
-            <button
-              onClick={handleToggleFireGuns}
-              title={
-                gunDeploy < 0.85
-                  ? 'Extend twin front-wing Browning .30-caliber machine guns'
-                  : 'Press the red gear-knob button to fire/stop the deployed wing guns'
-              }
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition cursor-pointer shrink-0 ${isFiringGuns
-                  ? 'bg-orange-500 text-zinc-950 border-orange-400 shadow-sm shadow-orange-500/30'
-                  : 'bg-zinc-900 text-orange-300 border-orange-500/30 hover:bg-orange-500/15'
-                }`}
-            >
-              <Flame className="w-3.5 h-3.5" />
-              <span>{gunDeploy < 0.85 ? 'Deploy' : isFiringGuns ? 'Firing' : 'Fire'}</span>
-            </button>
-          </div>
+                                                                    {/* Q-Branch Wing Guns Deployment Slider Row */}
+                                                                        <div className="flex items-center gap-4 pt-1.5 border-t border-[#F4F1EA]/12">
+                                                                          <div className="flex items-center gap-2 text-xs text-[#D96B27] shrink-0 w-28">
+                                                                            <Target className="w-3.5 h-3.5 text-[#D96B27] shrink-0" />
+                                                                            <span className="font-display-bj font-bold tracking-[0.12em]">WING GUNS</span>
+                                                                          </div>
+                                                                          <input
+                                                                            type="range"
+                                                                            min={0}
+                                                                            max={1}
+                                                                            step={0.01}
+                                                                            value={gunDeploy}
+                                                                            onChange={(e) => {
+                                                                              const v = parseFloat(e.target.value);
+                                                                              setGunDeploy(v);
+                                                                              setQBranchState((prev) => ({ ...prev, wingGuns: v >= 0.5 }));
+                                                                              if (v < 0.85) setIsFiringGuns(false);
+                                                                            }}
+                                                                            className="flex-1 gf-slider gf-slider-orange cursor-pointer"
+                                                                          />
+                                                                            <span className="font-mono-bj text-xs text-[#D96B27] w-10 text-right shrink-0">
+                                                                              {Math.round(gunDeploy * 100)}%
+                                                                            </span>
+                                                                            <div className="w-px h-4 bg-[#F4F1EA]/15" />
+                                                                            <button
+                                                                              onClick={handleToggleFireGuns}
+                                                                              title={
+                                                                                gunDeploy < 0.85
+                                                                                  ? 'Extend twin front-wing Browning .30-caliber machine guns'
+                                                                                  : 'Press the red gear-knob button to fire/stop the deployed wing guns'
+                                                                              }
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[1px] font-display-bj text-xs font-bold tracking-[0.14em] border transition cursor-pointer shrink-0 ${isFiringGuns
+                                                                                ? 'bj-fire-active bg-[#D96B27] text-[#050505] border-[#D96B27]'
+                                                                                : 'bg-[#0e0e10] text-[#D96B27] border-[#D96B27]/45 hover:bg-[#D96B27]/15'
+                                                                                }`}
+                                                                            >
+                                                                              <Flame className="w-3.5 h-3.5" />
+                                                                              <span>{gunDeploy < 0.85 ? 'DEPLOY' : isFiringGuns ? 'FIRING' : 'FIRE'}</span>
+                                                                            </button>
+                                                                        </div>
 
-          {/* Q-Branch Cockpit & Armrest Controls Row */}
-          <div className="flex items-center flex-wrap gap-1.5 pt-1.5 border-t border-zinc-800/70">
-            <button
-              onClick={() => setQBranchState((prev) => ({ ...prev, gearCapOpen: !prev.gearCapOpen }))}
-              className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition cursor-pointer ${qBranchState.gearCapOpen
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
-                  : 'bg-zinc-900 text-zinc-300 border-zinc-700/60 hover:bg-zinc-800'
-                }`}
-              title="Flip open/close the gear-knob safety cap"
-            >
-              {qBranchState.gearCapOpen ? 'Cap Open' : 'Flip Cap'}
-            </button>
+                                                                        {/* Q-Branch Cockpit & Armrest Controls Row */}
+                                                                          <div className="flex items-center flex-wrap gap-1.5 pt-1.5 border-t border-[#F4F1EA]/12">
+                                                                            <button
+                                                                              onClick={() => setQBranchState((prev) => ({ ...prev, gearCapOpen: !prev.gearCapOpen }))}
+              className={`px-2 py-1 rounded-[1px] font-mono-bj text-[10px] font-semibold uppercase tracking-wider border transition cursor-pointer ${qBranchState.gearCapOpen
+                                                                                ? 'bg-[#D4AF37]/20 text-[#D4AF37] border-[#D4AF37]'
+                                                                                : 'bg-[#0e0e10] text-[#F4F1EA]/75 border-[#F4F1EA]/18 hover:border-[#F4F1EA]/40'
+                                                                                }`}
+                                                                              title="Flip open/close the gear-knob safety cap"
+                                                                            >
+                                                                              {qBranchState.gearCapOpen ? 'CAP OPEN' : 'FLIP CAP'}
+                                                                            </button>
 
-            <button
-              onClick={triggerGearRedButton}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition cursor-pointer ${
-                (qBranchState.wingGuns || gunDeploy >= 0.5)
-                  ? isFiringGuns
-                    ? 'bg-orange-500 text-zinc-950 border-orange-400 shadow-sm shadow-orange-500/40'
-                    : 'bg-orange-950/60 text-orange-300 border-orange-500/40 hover:bg-orange-900/60'
-                  : qBranchState.seatEjected
-                    ? 'bg-red-600 text-white border-red-400 shadow-sm shadow-red-500/40'
-                    : 'bg-red-950/60 text-red-300 border-red-500/40 hover:bg-red-900/60'
-              }`}
+                                                                            <button
+                                                                              onClick={triggerGearRedButton}
+                                                                                    ? isFiringGuns
+                                                                                        ? 'bj-fire-active bg-[#D96B27] text-[#050505] border-[#D96B27]'
+                                                                                        : 'bg-[#D96B27]/15 text-[#D96B27] border-[#D96B27]/60 hover:bg-[#D96B27]/25'
+                                                                                    : qBranchState.seatEjected
+                                                                                        ? 'bg-[#C42B2B] text-[#F4F1EA] border-[#C42B2B]'
+                                                                                        : 'bg-[#C42B2B]/15 text-[#F4F1EA] border-[#C42B2B]/60 hover:bg-[#C42B2B]/30'
+                                                                                  }`}
               title="Red Gear-Knob Button: Fires/stops the Wing Guns when guns are extended, or triggers the Passenger Ejector Seat when guns are retracted"
             >
               {!qBranchState.gearCapOpen
                 ? (qBranchState.wingGuns || gunDeploy >= 0.5)
-                  ? 'Flip Cap (Guns)'
-                  : 'Flip Cap (Eject)'
+                  ? 'FLIP CAP (GUNS)'
+                  : 'FLIP CAP (EJECT)'
                 : (qBranchState.wingGuns || gunDeploy >= 0.5)
                   ? isFiringGuns
-                    ? 'Cease Fire (Red Btn)'
-                    : 'Fire Guns (Red Btn)'
+                    ? 'CEASE FIRE (RED BTN)'
+                    : 'FIRE GUNS (RED BTN)'
                   : qBranchState.seatEjected
-                    ? 'Reset Ejector'
-                    : 'Eject Seat (Red Btn)'}
+                    ? 'RESET EJECTOR'
+                    : 'EJECT SEAT (RED BTN)'}
             </button>
 
             <button
               onClick={() => setQBranchState((prev) => ({ ...prev, armrestOpen: !prev.armrestOpen }))}
-              className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition cursor-pointer ${qBranchState.armrestOpen
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
-                  : 'bg-zinc-900 text-zinc-300 border-zinc-700/60 hover:bg-zinc-800'
-                }`}
-              title="Lift center armrest lid to reveal Q-Branch switchgear"
+              className={`px-2 py-1 rounded-[1px] font-mono-bj text-[10px] font-semibold uppercase tracking-wider border transition cursor-pointer ${qBranchState.armrestOpen
+                                                                              ? 'bg-[#D4AF37]/20 text-[#D4AF37] border-[#D4AF37]'
+                                                                              : 'bg-[#0e0e10] text-[#F4F1EA]/75 border-[#F4F1EA]/18 hover:border-[#F4F1EA]/40'
+                                                                              }`}
+                                                                            title="Lift center armrest lid to reveal Q-Branch switchgear"
             >
-              {qBranchState.armrestOpen ? 'Armrest Open' : 'Armrest'}
-            </button>
+                                                                            {qBranchState.armrestOpen ? 'ARMREST OPEN' : 'ARMREST'}
+                                                                          </button>
 
-            <div className="w-px h-4 bg-zinc-800 mx-0.5" />
+                                                                          <div className="w-px h-4 bg-[#F4F1EA]/15 mx-0.5" />
 
-            <button
-              onClick={cyclePlates}
-              className="px-2 py-0.5 rounded-md text-[10px] font-medium border bg-sky-500/15 text-sky-300 border-sky-500/40 hover:bg-sky-500/25 transition cursor-pointer"
-              title="Cycle 3-way revolving number plates (1: BMT 216A, 2: 4711-EA-62, 3: LU 6789)"
-            >
-              Plate {qBranchState.plateIndex + 1}
-            </button>
+                                                                          <button
+                                                                            onClick={cyclePlates}
+                                                                            className="px-2 py-0.5 rounded-[1px] font-mono-bj text-[10px] font-bold uppercase tracking-wider border bg-[#D4AF37]/15 text-[#D4AF37] border-[#D4AF37]/50 hover:bg-[#D4AF37]/25 transition cursor-pointer"
+                                                                            title="Cycle 3-way revolving number plates (1: BMT 216A, 2: 4711-EA-62, 3: LU 6789)"
+                                                                          >
+                                                                            PLATE {qBranchState.plateIndex + 1}
+                                                                          </button>
 
-            {(
-              [
-                ['wingGuns', 'Guns'],
-                ['roofHatch', 'Eject'],
-                ['bulletShield', 'Shield'],
-                ['tyreSlashers', 'Slashers'],
-                ['smokeScreen', 'Smoke'],
-                ['oilSlick', 'Oil'],
-                ['caltrops', 'Nails'],
-                ['frontRam', 'F-Ram'],
-                ['rearRam', 'R-Ram'],
-              ] as Array<[QBranchGadgetKey, string]>
-            ).map(([key, label]) => {
-              const active = qBranchState[key];
-              return (
-                <button
-                  key={key}
-                  onClick={() => toggleGadget(key)}
-                  className={`px-2 py-0.5 rounded-md text-[10px] font-medium border transition cursor-pointer ${active
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
-                      : 'bg-zinc-900/70 text-zinc-400 border-zinc-800 hover:text-zinc-200'
-                    }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
+                                                                          {(
+                                                                            [
+                                                                              ['wingGuns', 'GUNS'],
+                                                                              ['roofHatch', 'EJECT'],
+                                                                              ['bulletShield', 'SHIELD'],
+                                                                              ['tyreSlashers', 'SLASHERS'],
+                                                                              ['smokeScreen', 'SMOKE'],
+                                                                              ['oilSlick', 'OIL'],
+                                                                              ['caltrops', 'NAILS'],
+                                                                              ['frontRam', 'F-RAM'],
+                                                                              ['rearRam', 'R-RAM'],
+                                                                            ] as Array<[QBranchGadgetKey, string]>
+                                                                          ).map(([key, label]) => {
+                                                                            const active = qBranchState[key];
+                                                                            return (
+                                                                              <button
+                                                                                key={key}
+                                                                                onClick={() => toggleGadget(key)}
+                  className={`px-2 py-0.5 rounded-[1px] font-mono-bj text-[10px] font-semibold tracking-wider border transition cursor-pointer ${active
+                                                                                  ? 'bg-[#D4AF37] text-[#050505] border-[#D4AF37]'
+                                                                                  : 'bg-[#0b0b0d] text-[#F4F1EA]/60 border-[#F4F1EA]/15 hover:text-[#F4F1EA] hover:border-[#F4F1EA]/35'
+                                                                                  }`}
+                                                                              >
+                                                                                {label}
+                                                                              </button>
+                                                                            );
+                                                                          })}
+                                                                        </div>
+                                                                      </div>
+                                                                    </div>
 
-      {/* Bottom-Right Interactive Mini 3D Q-Branch Armrest & Gear-Knob Controller */}
-      <QBranchMiniController
-        qBranchState={qBranchState}
-        isFiringGuns={isFiringGuns}
-        onCabinAction={handleCabinAction}
-        onResetAllGadgets={handleResetAllGadgets}
-      />
-    </div>
-  );
+                                                                    {/* Bottom-Right Interactive Mini 3D Q-Branch Armrest & Gear-Knob Controller */}
+                                                                    <QBranchMiniController
+                                                                      qBranchState={qBranchState}
+                                                                      isFiringGuns={isFiringGuns}
+                                                                      onCabinAction={handleCabinAction}
+                                                                      onResetAllGadgets={handleResetAllGadgets}
+                                                                    />
+                                                                  </div>
+                                                                  );
 }
 
-export default App;
+                                                                  export default App;

@@ -35,6 +35,7 @@ export interface CabinSubPart {
   materialLabel: string;
   qBranchNote: string;
   semanticDir: [number, number, number];
+  companions?: THREE.Mesh[];
   action?:
     | { type: 'toggleGearCap' }
     | { type: 'pressGearButton' }
@@ -460,11 +461,12 @@ export function createQBranchCabinRig(
     materialLabel: string,
     qBranchNote: string,
     semanticDir: [number, number, number],
-    action?: CabinSubPart['action']
+    action?: CabinSubPart['action'],
+    companions?: THREE.Mesh[]
   ) => {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    subParts.push({ mesh, label, materialLabel, qBranchNote, semanticDir, action });
+    subParts.push({ mesh, label, materialLabel, qBranchNote, semanticDir, action, companions });
     return mesh;
   };
 
@@ -614,6 +616,7 @@ export function createQBranchCabinRig(
   const hingeLug = new THREE.Mesh(new THREE.BoxGeometry(0.0055, 0.003, 0.005), machinedAluMat);
   hingeLug.position.set(0, 0.0, -0.0015);
   gearCapPivot.add(hingeLug);
+  subParts[subParts.length - 1].companions = [hingeLug];
 
   const shiftTex = createShiftPatternTexture();
   const shiftCapMat = new THREE.MeshStandardMaterial({
@@ -697,6 +700,7 @@ export function createQBranchCabinRig(
   deckLabelsPlane.rotation.x = -Math.PI / 2;
   deckLabelsPlane.position.set(0, deckY + 0.0003, 0);
   armrestGroup.add(deckLabelsPlane);
+  subParts[subParts.length - 1].companions = [deckLabelsPlane];
 
   // Hinge stays on +X side so lid opens from the current position toward passenger (+X)
   const hingePivotX = boxWidth / 2 - 0.004;
@@ -863,13 +867,15 @@ export function createQBranchCabinRig(
   const miniRingGeo = new THREE.CylinderGeometry(0.0024, 0.0028, 0.0014, 16);
 
   for (const spec of toggleSpecs) {
+    const collarCompanions: THREE.Mesh[] = [];
     const collar = register(
       new THREE.Mesh(toggleCollarGeo, chromeMat),
       `${spec.label} Collar`,
       'Turned Chrome Bezel',
       spec.note,
       [spec.x * 2, 0.7, spec.z * 2],
-      { type: 'toggleGadget', key: spec.key }
+      { type: 'toggleGadget', key: spec.key },
+      collarCompanions
     );
     collar.position.set(spec.x, deckY, spec.z);
     armrestGroup.add(collar);
@@ -877,6 +883,7 @@ export function createQBranchCabinRig(
     const hexNut = new THREE.Mesh(toggleHexNutGeo, chromeMat);
     hexNut.position.set(spec.x, deckY + 0.0032, spec.z);
     armrestGroup.add(hexNut);
+    collarCompanions.push(hexNut);
 
     const pivot = new THREE.Group();
     pivot.position.set(spec.x, deckY + 0.0052, spec.z);
@@ -891,7 +898,8 @@ export function createQBranchCabinRig(
       'Molded Black Duckbill Toggle',
       spec.note,
       [spec.x * 2, 0.82, spec.z * 2],
-      { type: 'toggleGadget', key: spec.key }
+      { type: 'toggleGadget', key: spec.key },
+      [ball]
     );
     pivot.add(paddle);
     togglePivots[spec.key] = pivot;
@@ -910,6 +918,7 @@ export function createQBranchCabinRig(
     const led = new THREE.Mesh(new THREE.CylinderGeometry(0.0014, 0.0014, 0.0016, 12), ledMat);
     led.position.set(spec.x, deckY + 0.0008, spec.z + 0.0145);
     armrestGroup.add(led);
+    collarCompanions.push(ledRing, led);
     switchLeds[spec.key] = ledMat;
   }
 
@@ -1008,13 +1017,15 @@ export function createQBranchCabinRig(
   rockerFinGeo.translate(-0.0085, 0.0042, 0);
 
   for (const spec of rockerSpecs) {
+    const housingCompanions: THREE.Mesh[] = [];
     const housing = register(
       new THREE.Mesh(rockerFrameGeo, matteSwitchMat),
       `${spec.label} Housing`,
       'Beveled Molded Nylon Shroud',
       spec.note,
       [spec.x * 2, 0.7, spec.z * 2],
-      { type: 'toggleGadget', key: spec.key }
+      { type: 'toggleGadget', key: spec.key },
+      housingCompanions
     );
     housing.position.set(spec.x, deckY + 0.001, spec.z);
     armrestGroup.add(housing);
@@ -1023,23 +1034,24 @@ export function createQBranchCabinRig(
       const guard = new THREE.Mesh(archGuardGeo, matteSwitchMat);
       guard.position.set(spec.x + sideX, deckY + 0.0055, spec.z);
       armrestGroup.add(guard);
+      housingCompanions.push(guard);
     }
 
     const rockerPivot = new THREE.Group();
     rockerPivot.position.set(spec.x, deckY + 0.0038, spec.z);
     armrestGroup.add(rockerPivot);
 
+    const thumbFin = new THREE.Mesh(rockerFinGeo, satinPaddleMat);
     const rockerTab = register(
       new THREE.Mesh(rockerPaddleGeo, satinPaddleMat),
       spec.label,
       'Beveled Tactile Rocker Actuator',
       spec.note,
       [spec.x * 2, 0.82, spec.z * 2],
-      { type: 'toggleGadget', key: spec.key }
+      { type: 'toggleGadget', key: spec.key },
+      [thumbFin]
     );
     rockerPivot.add(rockerTab);
-
-    const thumbFin = new THREE.Mesh(rockerFinGeo, satinPaddleMat);
     rockerPivot.add(thumbFin);
 
     rockerPivots[spec.key] = rockerPivot;
@@ -1057,6 +1069,7 @@ export function createQBranchCabinRig(
     const led = new THREE.Mesh(new THREE.CylinderGeometry(0.0014, 0.0014, 0.0016, 12), ledMat);
     led.position.set(spec.x, deckY + 0.0008, spec.z + 0.0285);
     armrestGroup.add(led);
+    housingCompanions.push(ledRing, led);
     switchLeds[spec.key] = ledMat;
   }
 
@@ -1102,13 +1115,15 @@ export function createQBranchCabinRig(
   });
   gatePlateGeo.rotateX(-Math.PI / 2);
 
+  const gateScrews: THREE.Mesh[] = [];
   const gatePlate = register(
     new THREE.Mesh(gatePlateGeo, machinedAluMat),
     'Revolving Plates E-Gate Plate',
     'CNC-Machined Brushed Aluminum',
     'Beveled 3-position E-gate selector plate for the revolving number plates (1: BMT 216A, 2: 4711-EA-62, 3: LU 6789).',
     [0.1, 0.72, -0.25],
-    { type: 'cyclePlates' }
+    { type: 'cyclePlates' },
+    gateScrews
   );
   gatePlate.position.set(gateX, deckY + 0.0012, gateZ);
   armrestGroup.add(gatePlate);
@@ -1129,6 +1144,7 @@ export function createQBranchCabinRig(
     const screw = new THREE.Mesh(screwGeo, chromeMat);
     screw.position.set(gateX + sx, deckY + 0.0049, gateZ + sz);
     armrestGroup.add(screw);
+    gateScrews.push(screw);
   }
 
   // Start in Slot 1 (-Z = -0.023, branch tip X = gateX - 0.010)
@@ -1157,7 +1173,8 @@ export function createQBranchCabinRig(
     'Turned Solid Brass',
     '3-position brass gate lever. Slides cleanly through the E-gate track to cycle plates (BMT 216A / 4711-EA-62 / LU 6789).',
     [0.1, 0.88, -0.28],
-    { type: 'cyclePlates' }
+    { type: 'cyclePlates' },
+    [leverStem]
   );
   plateLeverGroup.add(brassKnob);
 

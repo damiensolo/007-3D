@@ -16,6 +16,7 @@ export interface GunRig {
     materialLabel: string;
     qBranchNote: string;
     semanticDir: [number, number, number];
+    companions?: THREE.Mesh[];
   }>;
 }
 
@@ -89,11 +90,12 @@ export function createBrowningGunRig(
     label: string,
     materialLabel: string,
     qBranchNote: string,
-    semanticDir: [number, number, number]
+    semanticDir: [number, number, number],
+    companions?: THREE.Mesh[]
   ) => {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    subParts.push({ mesh, label, materialLabel, qBranchNote, semanticDir });
+    subParts.push({ mesh, label, materialLabel, qBranchNote, semanticDir, companions });
     return mesh;
   };
 
@@ -137,6 +139,7 @@ export function createBrowningGunRig(
   const rearCap = new THREE.Mesh(capGeo, bayInteriorMat);
   rearCap.position.set(0, 0, -sleeveLen - 0.008 * s);
   root.add(rearCap);
+  subParts[subParts.length - 1].companions = [rearCap];
 
   // 2. Hinged Lucas Indicator Flap (pivots at bottom lip: y = -portRadius, z = 0)
   const indicatorFlap = new THREE.Group();
@@ -172,6 +175,7 @@ export function createBrowningGunRig(
   const hingeBracket = new THREE.Mesh(hingeGeo, parkerizedSteel);
   hingeBracket.position.set(0, 0.002 * s, -0.004 * s);
   indicatorFlap.add(hingeBracket);
+  subParts[subParts.length - 2].companions = [hingeBracket];
 
   // 3. Sliding Gun Carriage (recessed at -0.23*s so muzzle tip at +0.207*s stays -0.023*s behind the closed lens)
   const gunCarriage = new THREE.Group();
@@ -267,12 +271,14 @@ export function createBrowningGunRig(
     const tip = new THREE.Mesh(tipGeo, copperMat);
     tip.position.set(isLeft ? -0.012 * s : 0.012 * s, -0.007 * s + i * 0.007 * s, -0.01 * s + i * 0.01 * s);
     ammoGroup.add(tip);
+    subParts[subParts.length - 1].companions = [tip];
   }
 
   // Barrel & Perforated Cooling Jacket Group (recoils during firing!)
   const barrelGroup = new THREE.Group();
   gunCarriage.add(barrelGroup);
 
+  const jacketRings: THREE.Mesh[] = [];
   const jacketGeo = new THREE.CylinderGeometry(0.0165 * s, 0.0165 * s, 0.11 * s, 20);
   jacketGeo.rotateX(Math.PI / 2);
   const jacket = register(
@@ -280,7 +286,8 @@ export function createBrowningGunRig(
     `${sideLabel} Perforated Cooling Jacket`,
     'Ventilated Steel Shroud',
     'Air-cooled perforated barrel shroud characteristic of the Browning M1919.',
-    [sideX * 0.75, 0.25, 1.45]
+    [sideX * 0.75, 0.25, 1.45],
+    jacketRings
   );
   jacket.position.set(0, 0.0, 0.055 * s);
   barrelGroup.add(jacket);
@@ -290,6 +297,7 @@ export function createBrowningGunRig(
     const ring = new THREE.Mesh(ringGeo, bluedBarrel);
     ring.position.set(0, 0.0, (0.015 + r * 0.02) * s);
     barrelGroup.add(ring);
+    jacketRings.push(ring);
   }
 
   // Rifled Inner Barrel

@@ -361,53 +361,51 @@ export const QBranchMiniController: React.FC<QBranchMiniControllerProps> = ({
       <div className="fixed bottom-4 right-4 z-30">
         <button
           onClick={() => setCollapsed(false)}
-          className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl bg-zinc-950/90 hover:bg-zinc-900 border border-amber-500/40 backdrop-blur-xl shadow-2xl text-xs font-semibold text-zinc-100 transition cursor-pointer"
+          className="flex items-center gap-2.5 px-3.5 py-2.5 gf-panel-gold hover:bg-[#121214] font-display-bj text-xs font-bold tracking-[0.16em] text-[#F4F1EA] transition cursor-pointer"
           title="Expand 3D Q-Branch Armrest Controller"
         >
-          <Gamepad2 className="w-4 h-4 text-amber-400" />
-          <span>007 3D Console</span>
+          <Gamepad2 className="w-4 h-4 text-[#D4AF37]" />
+          <span>007 3D CONSOLE</span>
           {activeGadgetCount > 0 && (
-            <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-amber-500 text-zinc-950">
-              {activeGadgetCount}
-            </span>
+              <span className="px-1.5 py-0.5 font-mono-bj text-[10px] font-bold bg-[#D4AF37] text-[#050505]">
+                {activeGadgetCount}
+              </span>
           )}
-          <ChevronUp className="w-3.5 h-3.5 text-zinc-400" />
-        </button>
+              <ChevronUp className="w-3.5 h-3.5 text-[#D4AF37]" />
+            </button>
       </div>
     );
   }
 
   return (
     <aside
-      className="fixed bottom-4 right-4 z-30 w-[224px] flex flex-col rounded-2xl bg-zinc-950/88 border border-zinc-800/90 backdrop-blur-xl shadow-2xl overflow-hidden select-none"
+      className="fixed bottom-4 right-4 z-30 w-[224px] flex flex-col gf-panel-gold overflow-hidden select-none"
       aria-label="Interactive 3D Q-Branch Armrest Controller"
     >
       {/* Top Header Bar */}
-      <div className="px-3 py-2 border-b border-zinc-800/80 flex items-center justify-between bg-zinc-900/50">
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-          <span className="text-[10px] font-bold tracking-[0.16em] uppercase text-amber-400">
-            Q-Branch 3D Console
-          </span>
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => {
-              setShowCoverLid((v) => !v);
-              onCabinAction({ type: 'toggleArmrest' });
-            }}
-            className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border transition cursor-pointer ${
-              showCoverLid
-                ? 'bg-zinc-800 text-zinc-300 border-zinc-700'
-                : 'bg-amber-500/15 text-amber-300 border-amber-500/40'
-            }`}
+        <div className="px-3 py-2 border-b border-[#D4AF37]/25 flex items-center justify-between bg-[#080809]">
+          <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-[1px] bg-[#D4AF37] animate-pulse" />
+              <span className="font-display-bj text-[11px] font-bold tracking-[0.18em] text-[#D4AF37]">
+                Q-BRANCH 3D
+              </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => {
+                setShowCoverLid((v) => !v);
+                onCabinAction({ type: 'toggleArmrest' });
+              }}
+                      ? 'bg-[#141416] text-[#F4F1EA]/70 border-[#F4F1EA]/20'
+                      : 'bg-[#D4AF37]/15 text-[#D4AF37] border-[#D4AF37]/50'
+                  }`}
             title="Toggle Connolly leather armrest cover lid"
           >
-            {showCoverLid ? 'Open Lid' : 'Cover'}
+            {showCoverLid ? 'OPEN LID' : 'COVER'}
           </button>
           <button
             onClick={() => setCollapsed(true)}
-            className="p-1 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/70 transition cursor-pointer"
+            className="p-1 rounded-[1px] text-[#F4F1EA]/60 hover:text-[#D4AF37] hover:bg-[#141416] transition cursor-pointer"
             title="Minimize 3D controller"
           >
             <ChevronDown className="w-3.5 h-3.5" />
@@ -416,14 +414,14 @@ export const QBranchMiniController: React.FC<QBranchMiniControllerProps> = ({
       </div>
 
       {/* Live Hover / Status Readout Banner */}
-      <div className="px-3 py-1.5 bg-zinc-950/90 border-b border-zinc-800/60 min-h-[38px] flex flex-col justify-center">
+      <div className="px-3 py-1.5 bg-[#050505] border-b border-[#F4F1EA]/12 min-h-[38px] flex flex-col justify-center">
         {hoveredControl ? (
           <>
-            <div className="text-[11px] font-semibold text-zinc-100 truncate">
+            <div className="font-display-bj text-xs font-semibold tracking-wider text-[#F4F1EA] truncate">
               {hoveredControl.label}
             </div>
             <div
-              className="text-[9px] font-mono font-bold tracking-wider uppercase truncate"
+              className="font-mono-bj text-[9px] font-bold tracking-wider uppercase truncate"
               style={{ color: hoveredControl.accent }}
             >
               {hoveredControl.status}
@@ -431,64 +429,60 @@ export const QBranchMiniController: React.FC<QBranchMiniControllerProps> = ({
           </>
         ) : (
           <>
-            <div className="flex items-center justify-between text-[10px] text-zinc-300 font-medium">
-              <span>Click 3D Switches &amp; Gear Cap</span>
-              <span className="font-mono text-amber-400 text-[10px]">
+            <div className="flex items-center justify-between text-[10px] text-[#F4F1EA]/85 font-medium">
+              <span>Click 3D Switches</span>
+              <span className="font-mono-bj text-[#D4AF37] text-[10px] font-bold">
                 {PLATE_NAMES[qBranchState.plateIndex].split(' ')[0]}
               </span>
             </div>
-            <div className="text-[9px] text-zinc-500 truncate">
+            <div className="font-mono-bj text-[9px] text-[#F4F1EA]/45 truncate">
               {activeGadgetCount > 0
-                ? `${activeGadgetCount} Q-Branch system${activeGadgetCount > 1 ? 's' : ''} active`
-                : 'All systems stowed · Ready'}
-            </div>
-          </>
+                ? `${activeGadgetCount} Q-BRANCH SYSTEM${activeGadgetCount > 1 ? 'S' : ''} ACTIVE`
+                : 'ALL SYSTEMS STOWED · READY'}
+          </div>
+        </>
         )}
       </div>
 
-      {/* Top Ejector / Wing-Gun Gear-Knob Callout Strip (dedicated header strip so it never overlaps the 3D gear knob) */}
-      <div className="px-3 py-1 bg-zinc-900/70 border-b border-zinc-800/70 flex items-center justify-between text-[9px] font-mono uppercase tracking-wider text-zinc-400">
-        <span
-          className={`flex items-center gap-1 font-semibold ${
-            qBranchState.wingGuns ? 'text-orange-300' : 'text-red-300'
-          }`}
-        >
-          <ShieldAlert
-            className={`w-2.5 h-2.5 ${
-              qBranchState.wingGuns ? 'text-orange-400' : 'text-red-400'
+        {/* Top Ejector / Wing-Gun Gear-Knob Callout Strip */}
+        <div className="px-3 py-1 bg-[#0a0a0c] border-b border-[#F4F1EA]/12 flex items-center justify-between font-mono-bj text-[9px] uppercase tracking-wider text-[#F4F1EA]/55">
+          <span
+          className={`flex items-center gap-1 font-bold ${qBranchState.wingGuns ? 'text-[#D96B27]' : 'text-[#C42B2B]'
+              }`}
+          >
+            <ShieldAlert
+              qBranchState.wingGuns ? 'text-[#D96B27]' : 'text-[#C42B2B]'
             }`}
           />
-          {!qBranchState.gearCapOpen
-            ? '1. Flip Gear Cap'
-            : qBranchState.wingGuns
-              ? isFiringGuns
-                ? 'Red Btn: Cease Fire'
-                : 'Red Btn: Fire Guns'
-              : 'Red Btn: Eject Seat'}
-        </span>
-        <span className="text-zinc-500">
-          {qBranchState.wingGuns ? 'Mode: Guns' : 'Mode: Ejector'}
-        </span>
-      </div>
+            {!qBranchState.gearCapOpen
+                ? '1. FLIP GEAR CAP'
+                : qBranchState.wingGuns
+                  ? isFiringGuns
+            ? 'BTN: CEASE FIRE'
+            : 'BTN: FIRE GUNS'
+              : 'BTN: EJECT SEAT'}
+          </span>
+            <span className="text-[#D4AF37]/75">
+              {qBranchState.wingGuns ? 'GUNS' : 'EJECTOR'}
+            </span>
+        </div>
 
-      {/* Interactive 3D WebGL Canvas (Gear-Knob Ejector Crown + Center Armrest Switchboard) */}
-      <div className="relative w-full h-[440px] bg-gradient-to-b from-zinc-900/40 via-[#0b0d12] to-zinc-950">
-        <div ref={canvasHostRef} className="w-full h-full" />
-      </div>
+        {/* Interactive 3D WebGL Canvas (Gear-Knob Ejector Crown + Center Armrest Switchboard) */}
+          <div className="relative w-full h-[440px] bg-gradient-to-b from-[#0d0d10] via-[#070709] to-[#050505]">
+            <div ref={canvasHostRef} className="w-full h-full" />
+          </div>
 
-      {/* Bottom Quick-Action Tactical Footer (Master Trigger Info & Stow All) */}
-      <div className="px-2.5 py-2 border-t border-zinc-800/80 bg-zinc-900/60 flex items-center justify-between gap-1.5">
-        <button
-          onClick={() => onCabinAction({ type: 'pressGearButton' })}
-          className={`flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold border transition cursor-pointer ${
-            qBranchState.wingGuns
-              ? isFiringGuns
-                ? 'bg-orange-500 text-zinc-950 border-orange-400 shadow-sm shadow-orange-500/30'
-                : 'bg-zinc-900 text-orange-300 border-orange-500/30 hover:bg-orange-500/15'
-              : qBranchState.seatEjected
-                ? 'bg-red-600 text-white border-red-400 shadow-sm shadow-red-500/30'
-                : 'bg-zinc-900 text-red-300 border-red-500/30 hover:bg-red-500/15'
-          }`}
+            {/* Bottom Quick-Action Tactical Footer */}
+            <div className="px-2.5 py-2 border-t border-[#D4AF37]/25 bg-[#080809] flex items-center justify-between gap-1.5">
+              <button
+                onClick={() => onCabinAction({ type: 'pressGearButton' })}
+                      ? isFiringGuns
+                          ? 'bj-fire-active bg-[#D96B27] text-[#050505] border-[#D96B27]'
+                          : 'bg-[#0e0e10] text-[#D96B27] border-[#D96B27]/50 hover:bg-[#D96B27]/15'
+                      : qBranchState.seatEjected
+                          ? 'bg-[#C42B2B] text-[#F4F1EA] border-[#C42B2B]'
+                          : 'bg-[#0e0e10] text-[#F4F1EA] border-[#C42B2B]/55 hover:bg-[#C42B2B]/20'
+                    }`}
           title={
             qBranchState.wingGuns
               ? 'Press the red gear-knob button to fire/stop the extended wing guns'
@@ -498,24 +492,24 @@ export const QBranchMiniController: React.FC<QBranchMiniControllerProps> = ({
           <Flame className="w-3.5 h-3.5" />
           <span>
             {!qBranchState.gearCapOpen
-              ? 'Flip Gear Cap'
+              ? 'FLIP CAP'
               : qBranchState.wingGuns
                 ? isFiringGuns
-                  ? 'Cease Fire'
-                  : 'Red Btn: Fire'
+                  ? 'CEASE FIRE'
+                  : 'FIRE GUNS'
                 : qBranchState.seatEjected
-                  ? 'Reset Ejector'
-                  : 'Red Btn: Eject'}
+                  ? 'RESET SEAT'
+                  : 'EJECT SEAT'}
           </span>
         </button>
 
         <button
           onClick={onResetAllGadgets}
-          className="flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700/70 transition cursor-pointer"
+          className="bj-stow-hover flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-[1px] font-display-bj text-[11px] font-semibold tracking-[0.1em] bg-[#0e0e10] hover:bg-[#16161a] text-[#F4F1EA]/80 border border-[#F4F1EA]/20 transition cursor-pointer"
           title="Stow all deployed Q-Branch gadgets and reset ejector seat"
         >
           <RotateCcw className="w-3 h-3" />
-          <span>Stow All</span>
+          <span>STOW ALL</span>
         </button>
       </div>
     </aside>
