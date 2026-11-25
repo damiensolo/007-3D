@@ -941,15 +941,17 @@ export function App() {
                                                                               {qBranchState.gearCapOpen ? 'CAP OPEN' : 'FLIP CAP'}
                                                                             </button>
 
-                                                                            <button
-                                                                              onClick={triggerGearRedButton}
-                                                                                    ? isFiringGuns
-                                                                                        ? 'bj-fire-active bg-[#D96B27] text-[#050505] border-[#D96B27]'
-                                                                                        : 'bg-[#D96B27]/15 text-[#D96B27] border-[#D96B27]/60 hover:bg-[#D96B27]/25'
-                                                                                    : qBranchState.seatEjected
-                                                                                        ? 'bg-[#C42B2B] text-[#F4F1EA] border-[#C42B2B]'
-                                                                                        : 'bg-[#C42B2B]/15 text-[#F4F1EA] border-[#C42B2B]/60 hover:bg-[#C42B2B]/30'
-                                                                                  }`}
+            <button
+              onClick={triggerGearRedButton}
+              className={`bj-eject-hover px-2.5 py-1 rounded-[1px] font-display-bj text-[11px] font-bold tracking-[0.12em] border transition cursor-pointer ${
+                (qBranchState.wingGuns || gunDeploy >= 0.5)
+                  ? isFiringGuns
+                    ? 'bj-fire-active bg-[#D96B27] text-[#050505] border-[#D96B27]'
+                    : 'bg-[#D96B27]/15 text-[#D96B27] border-[#D96B27]/60 hover:bg-[#D96B27]/25'
+                  : qBranchState.seatEjected
+                    ? 'bg-[#C42B2B] text-[#F4F1EA] border-[#C42B2B]'
+                    : 'bg-[#C42B2B]/15 text-[#F4F1EA] border-[#C42B2B]/60 hover:bg-[#C42B2B]/30'
+              }`}
               title="Red Gear-Knob Button: Fires/stops the Wing Guns when guns are extended, or triggers the Passenger Ejector Seat when guns are retracted"
             >
               {!qBranchState.gearCapOpen

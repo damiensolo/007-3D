@@ -396,11 +396,13 @@ export const QBranchMiniController: React.FC<QBranchMiniControllerProps> = ({
                 setShowCoverLid((v) => !v);
                 onCabinAction({ type: 'toggleArmrest' });
               }}
-                      ? 'bg-[#141416] text-[#F4F1EA]/70 border-[#F4F1EA]/20'
-                      : 'bg-[#D4AF37]/15 text-[#D4AF37] border-[#D4AF37]/50'
-                  }`}
-            title="Toggle Connolly leather armrest cover lid"
-          >
+              className={`px-1.5 py-0.5 rounded-[1px] font-mono-bj text-[9px] font-bold uppercase tracking-wider border transition cursor-pointer ${
+                showCoverLid
+                  ? 'bg-[#141416] text-[#F4F1EA]/70 border-[#F4F1EA]/20'
+                  : 'bg-[#D4AF37]/15 text-[#D4AF37] border-[#D4AF37]/50'
+              }`}
+              title="Toggle Connolly leather armrest cover lid"
+            >
             {showCoverLid ? 'OPEN LID' : 'COVER'}
           </button>
           <button
@@ -450,7 +452,8 @@ export const QBranchMiniController: React.FC<QBranchMiniControllerProps> = ({
           className={`flex items-center gap-1 font-bold ${qBranchState.wingGuns ? 'text-[#D96B27]' : 'text-[#C42B2B]'
               }`}
           >
-            <ShieldAlert
+          <ShieldAlert
+            className={`w-2.5 h-2.5 ${
               qBranchState.wingGuns ? 'text-[#D96B27]' : 'text-[#C42B2B]'
             }`}
           />
@@ -476,13 +479,15 @@ export const QBranchMiniController: React.FC<QBranchMiniControllerProps> = ({
             <div className="px-2.5 py-2 border-t border-[#D4AF37]/25 bg-[#080809] flex items-center justify-between gap-1.5">
               <button
                 onClick={() => onCabinAction({ type: 'pressGearButton' })}
-                      ? isFiringGuns
-                          ? 'bj-fire-active bg-[#D96B27] text-[#050505] border-[#D96B27]'
-                          : 'bg-[#0e0e10] text-[#D96B27] border-[#D96B27]/50 hover:bg-[#D96B27]/15'
-                      : qBranchState.seatEjected
-                          ? 'bg-[#C42B2B] text-[#F4F1EA] border-[#C42B2B]'
-                          : 'bg-[#0e0e10] text-[#F4F1EA] border-[#C42B2B]/55 hover:bg-[#C42B2B]/20'
-                    }`}
+                className={`bj-eject-hover flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-[1px] font-display-bj text-[11px] font-bold tracking-[0.12em] border transition cursor-pointer ${
+                  qBranchState.wingGuns
+                    ? isFiringGuns
+                      ? 'bj-fire-active bg-[#D96B27] text-[#050505] border-[#D96B27]'
+                      : 'bg-[#0e0e10] text-[#D96B27] border-[#D96B27]/50 hover:bg-[#D96B27]/15'
+                    : qBranchState.seatEjected
+                      ? 'bg-[#C42B2B] text-[#F4F1EA] border-[#C42B2B]'
+                      : 'bg-[#0e0e10] text-[#F4F1EA] border-[#C42B2B]/55 hover:bg-[#C42B2B]/20'
+                }`}
           title={
             qBranchState.wingGuns
               ? 'Press the red gear-knob button to fire/stop the extended wing guns'
