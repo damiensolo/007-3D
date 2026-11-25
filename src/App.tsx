@@ -824,8 +824,8 @@ export function App() {
 
       {/* Bottom Floating Control Dock (Collapsible Views & Controls) */}
       <div
-        className={`absolute bottom-4 z-20 left-1/2 -translate-x-1/2 flex flex-col gap-2 max-w-[calc(100vw-2rem)] ${
-          sidebarOpen ? 'lg:left-[calc(50%+10rem)]' : ''
+        className={`absolute bottom-4 z-20 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 w-max max-w-[calc(100vw-2rem)] ${
+          sidebarOpen ? 'lg:left-[calc(50%+3.5rem)] lg:max-w-[calc(100vw-37rem)]' : 'lg:max-w-[calc(100vw-18rem)]'
         }`}
       >
         {!controlsOpen ? (
@@ -846,7 +846,7 @@ export function App() {
         ) : (
           <>
             {/* Presets Row + Collapse Button */}
-            <div className="flex items-center justify-center flex-wrap gap-1 px-2 py-1.5 gf-panel">
+            <div className="flex items-center justify-center flex-wrap xl:flex-nowrap gap-1 px-2.5 py-1.5 gf-panel w-full">
               {PRESETS.map((preset) => {
                 const active = activePresetId === preset.id;
                 return (
@@ -854,7 +854,7 @@ export function App() {
                     key={preset.id}
                     onClick={() => applyPreset(preset)}
                     title={preset.description}
-                    className={`px-3 py-1 rounded-[1px] font-display-bj text-xs font-semibold tracking-[0.12em] transition cursor-pointer ${
+                    className={`whitespace-nowrap px-2.5 py-1 rounded-[1px] font-display-bj text-xs font-semibold tracking-[0.12em] transition cursor-pointer ${
                       active
                         ? 'bg-[#D4AF37] text-[#050505]'
                         : 'text-[#F4F1EA]/75 hover:text-[#F4F1EA] hover:bg-[#141416]'
@@ -864,10 +864,10 @@ export function App() {
                   </button>
                 );
               })}
-              <div className="w-px h-4 bg-[#F4F1EA]/15 mx-0.5" />
+              <div className="w-px h-4 bg-[#F4F1EA]/15 mx-0.5 shrink-0" />
               <button
                 onClick={() => setControlsOpen(false)}
-                className="p-1 rounded-[1px] text-[#F4F1EA]/60 hover:text-[#D4AF37] hover:bg-[#141416] transition cursor-pointer"
+                className="p-1 rounded-[1px] text-[#F4F1EA]/60 hover:text-[#D4AF37] hover:bg-[#141416] transition cursor-pointer shrink-0"
                 title="Collapse Views & Controls"
               >
                 <ChevronDown className="w-3.5 h-3.5" />
@@ -875,7 +875,7 @@ export function App() {
             </div>
 
                                                               {/* Sliders & Controls */}
-                                                                <div className="flex flex-col gap-2 px-4 py-2.5 gf-panel min-w-[340px] sm:min-w-[500px]">
+                                                                <div className="flex flex-col gap-2 px-4 py-2.5 gf-panel w-full min-w-[320px] sm:min-w-[540px] lg:min-w-[680px]">
                                                                   {/* Kinetic Brownjohn Explode Slider Row ("EXPLODE" spreads apart as slider increases) */}
                                                                   <div className="flex items-center gap-4">
                                                                       <div className="flex items-center gap-2 text-xs text-[#F4F1EA] shrink-0 w-28">
@@ -955,7 +955,7 @@ export function App() {
                                                                         </div>
 
                                                                         {/* Q-Branch Cockpit & Armrest Controls Row */}
-                                                                          <div className="flex items-center flex-wrap gap-1.5 pt-1.5 border-t border-[#F4F1EA]/12">
+                                                                          <div className="flex items-center flex-wrap xl:flex-nowrap justify-center gap-1.5 pt-1.5 border-t border-[#F4F1EA]/12 whitespace-nowrap">
                                                                             <button
                                                                               onClick={() => setQBranchState((prev) => ({ ...prev, gearCapOpen: !prev.gearCapOpen }))}
               className={`px-2 py-1 rounded-[1px] font-mono-bj text-[10px] font-semibold uppercase tracking-wider border transition cursor-pointer ${qBranchState.gearCapOpen
