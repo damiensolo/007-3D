@@ -338,6 +338,8 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
   const rightDoorPivotRef = useRef<THREE.Group | null>(null);
   const leftDoorOpenRef = useRef(false);
   const rightDoorOpenRef = useRef(false);
+  const hoodPivotRef = useRef<THREE.Group | null>(null);
+  const hoodOpenRef = useRef(false);
   const cameraGoalRef = useRef<{ pos: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
@@ -1783,21 +1785,39 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
         rightDoorPivot.updateMatrixWorld(true);
         rightDoorPivotRef.current = rightDoorPivot;
 
+        // Create hinge pivot for forward-hinged bonnet (hood)
+        const hoodPivot = new THREE.Group();
+        hoodPivot.name = 'HoodHingePivot';
+        hoodPivot.position.set(0, 0.837, 2.133);
+        scene.add(hoodPivot);
+        hoodPivot.updateMatrixWorld(true);
+        hoodPivotRef.current = hoodPivot;
+
         const tmpDoorQuat = new THREE.Quaternion();
         const tmpDoorScale = new THREE.Vector3();
         const tmpDoorPos = new THREE.Vector3();
         for (const part of internalParts) {
-          if (part.subsystem !== 'doors') continue;
-          const isLeftDoor = part.meshName.toLowerCase().includes('door_fl');
-          const pivot = isLeftDoor ? leftDoorPivot : rightDoorPivot;
-          if (part.mesh.parent) {
-            part.mesh.parent.matrixWorld.decompose(tmpDoorPos, tmpDoorQuat, tmpDoorScale);
-            part.explodeOffset.multiply(tmpDoorScale).applyQuaternion(tmpDoorQuat);
-          }
-          pivot.attach(part.mesh);
-          part.basePosition.copy(part.mesh.position);
-          if (part.label.includes('Chrome Trim & Handle')) {
-            part.mesh.userData.doorHandleSide = isLeftDoor ? 'left' : 'right';
+          const lowerMeshName = part.meshName.toLowerCase();
+          if (part.subsystem === 'doors' && (lowerMeshName.includes('door_fl') || lowerMeshName.includes('door_fr'))) {
+            const isLeftDoor = lowerMeshName.includes('door_fl');
+            const pivot = isLeftDoor ? leftDoorPivot : rightDoorPivot;
+            if (part.mesh.parent) {
+              part.mesh.parent.matrixWorld.decompose(tmpDoorPos, tmpDoorQuat, tmpDoorScale);
+              part.explodeOffset.multiply(tmpDoorScale).applyQuaternion(tmpDoorQuat);
+            }
+            pivot.attach(part.mesh);
+            part.basePosition.copy(part.mesh.position);
+            if (part.label.includes('Chrome Trim & Handle')) {
+              part.mesh.userData.doorHandleSide = isLeftDoor ? 'left' : 'right';
+            }
+          } else if (part.subsystem === 'hood_trunk' && lowerMeshName.includes('hood')) {
+            if (part.mesh.parent) {
+              part.mesh.parent.matrixWorld.decompose(tmpDoorPos, tmpDoorQuat, tmpDoorScale);
+              part.explodeOffset.multiply(tmpDoorScale).applyQuaternion(tmpDoorQuat);
+            }
+            hoodPivot.attach(part.mesh);
+            part.basePosition.copy(part.mesh.position);
+            part.mesh.userData.panelToggle = 'hood';
           }
         }
 
@@ -1885,6 +1905,11 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
         }
         return;
       }
+      const panelToggle = hitObj?.userData.panelToggle as 'hood' | undefined;
+      if (panelToggle === 'hood') {
+        hoodOpenRef.current = !hoodOpenRef.current;
+        return;
+      }
       const hitId = (hitObj?.userData.partId as string) || null;
       const cabinAction = hitObj?.userData.cabinAction as CabinSubPart['action'] | undefined;
       if (cabinAction) {
@@ -1917,6 +1942,7 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
     let currentGunDeploy = gunDeployRef.current;
     let currentLeftDoorOpen = 0;
     let currentRightDoorOpen = 0;
+    let currentHoodOpen = 0;
     const clock = new THREE.Clock();
 
     const animate = () => {
@@ -1924,22 +1950,30 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
       const dt = clock.getDelta();
       const elapsed = clock.elapsedTime;
 
-      // Smoothly swing left & right doors open/closed around their A-pillar hinges
+      // Smoothly swing left & right doors and forward-hinged hood open/closed around their hinges
       const targetLeftDoor = leftDoorOpenRef.current ? 1 : 0;
       const targetRightDoor = rightDoorOpenRef.current ? 1 : 0;
+      const targetHood = hoodOpenRef.current ? 1 : 0;
       currentLeftDoorOpen += (targetLeftDoor - currentLeftDoorOpen) * 0.1;
       currentRightDoorOpen += (targetRightDoor - currentRightDoorOpen) * 0.1;
+      currentHoodOpen += (targetHood - currentHoodOpen) * 0.1;
       if (Math.abs(targetLeftDoor - currentLeftDoorOpen) < 0.0005) {
         currentLeftDoorOpen = targetLeftDoor;
       }
       if (Math.abs(targetRightDoor - currentRightDoorOpen) < 0.0005) {
         currentRightDoorOpen = targetRightDoor;
       }
+      if (Math.abs(targetHood - currentHoodOpen) < 0.0005) {
+        currentHoodOpen = targetHood;
+      }
       if (leftDoorPivotRef.current) {
         leftDoorPivotRef.current.rotation.y = -currentLeftDoorOpen * (Math.PI * 0.36);
       }
       if (rightDoorPivotRef.current) {
         rightDoorPivotRef.current.rotation.y = currentRightDoorOpen * (Math.PI * 0.36);
+      }
+      if (hoodPivotRef.current) {
+        hoodPivotRef.current.rotation.x = currentHoodOpen * (Math.PI * 0.25);
       }
 
       // Smoothly lerp gun deployment & firing recoil
