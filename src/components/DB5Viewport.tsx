@@ -334,6 +334,10 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
   const gunRigsRef = useRef<GunRig[]>([]);
   const cabinRigRef = useRef<QBranchCabinRig | null>(null);
   const gadgetsRigRef = useRef<QBranchGadgetsRig | null>(null);
+  const leftDoorPivotRef = useRef<THREE.Group | null>(null);
+  const rightDoorPivotRef = useRef<THREE.Group | null>(null);
+  const leftDoorOpenRef = useRef(false);
+  const rightDoorOpenRef = useRef(false);
   const cameraGoalRef = useRef<{ pos: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
@@ -1764,6 +1768,39 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
 
         crownProxyGeo.dispose();
 
+        // Create A-pillar hinge pivots for left (+X) and right (-X) doors so clicking a door handle swings that door open/closed
+        const leftDoorPivot = new THREE.Group();
+        leftDoorPivot.name = 'LeftDoorHingePivot';
+        leftDoorPivot.position.set(0.822, 0, 0.602);
+        scene.add(leftDoorPivot);
+        leftDoorPivot.updateMatrixWorld(true);
+        leftDoorPivotRef.current = leftDoorPivot;
+
+        const rightDoorPivot = new THREE.Group();
+        rightDoorPivot.name = 'RightDoorHingePivot';
+        rightDoorPivot.position.set(-0.822, 0, 0.602);
+        scene.add(rightDoorPivot);
+        rightDoorPivot.updateMatrixWorld(true);
+        rightDoorPivotRef.current = rightDoorPivot;
+
+        const tmpDoorQuat = new THREE.Quaternion();
+        const tmpDoorScale = new THREE.Vector3();
+        const tmpDoorPos = new THREE.Vector3();
+        for (const part of internalParts) {
+          if (part.subsystem !== 'doors') continue;
+          const isLeftDoor = part.meshName.toLowerCase().includes('door_fl');
+          const pivot = isLeftDoor ? leftDoorPivot : rightDoorPivot;
+          if (part.mesh.parent) {
+            part.mesh.parent.matrixWorld.decompose(tmpDoorPos, tmpDoorQuat, tmpDoorScale);
+            part.explodeOffset.multiply(tmpDoorScale).applyQuaternion(tmpDoorQuat);
+          }
+          pivot.attach(part.mesh);
+          part.basePosition.copy(part.mesh.position);
+          if (part.label.includes('Chrome Trim & Handle')) {
+            part.mesh.userData.doorHandleSide = isLeftDoor ? 'left' : 'right';
+          }
+        }
+
         partsRef.current = internalParts;
         pickableMeshesRef.current = internalParts.map((p) => p.mesh);
         onPartsLoaded(
@@ -1792,14 +1829,14 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
     let latestHoverClientX = 0;
     let latestHoverClientY = 0;
 
-    const getHitObject = (clientX: number, clientY: number): THREE.Object3D | null => {
+    const getHit = (clientX: number, clientY: number): THREE.Intersection | null => {
       const rect = renderer.domElement.getBoundingClientRect();
       pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
 
       raycaster.setFromCamera(pointer, camera);
       const hits = raycaster.intersectObjects(pickableMeshesRef.current, false);
-      return hits.length > 0 ? hits[0].object : null;
+      return hits.length > 0 ? hits[0] : null;
     };
 
     const handlePointerDown = (e: PointerEvent) => {
@@ -1823,7 +1860,7 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
       requestAnimationFrame(() => {
         hoverRafPending = false;
         if (disposed || isOrbitDragging) return;
-        const hitObj = getHitObject(latestHoverClientX, latestHoverClientY);
+        const hitObj = getHit(latestHoverClientX, latestHoverClientY)?.object ?? null;
         const hitId = (hitObj?.userData.partId as string) || null;
         renderer.domElement.style.cursor = hitId ? 'pointer' : 'grab';
         onHoverPart(hitId, hitId ? { x: latestHoverClientX, y: latestHoverClientY } : undefined);
@@ -1837,7 +1874,17 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
       const dy = e.clientY - pointerDownPos.y;
       if (wasDragging || Math.hypot(dx, dy) > 5) return; // Was an orbit drag, not a click
 
-      const hitObj = getHitObject(e.clientX, e.clientY);
+      const hit = getHit(e.clientX, e.clientY);
+      const hitObj = hit?.object ?? null;
+      const doorHandleSide = hitObj?.userData.doorHandleSide as 'left' | 'right' | undefined;
+      if (doorHandleSide && hit && hit.point.y < 0.88) {
+        if (doorHandleSide === 'left') {
+          leftDoorOpenRef.current = !leftDoorOpenRef.current;
+        } else {
+          rightDoorOpenRef.current = !rightDoorOpenRef.current;
+        }
+        return;
+      }
       const hitId = (hitObj?.userData.partId as string) || null;
       const cabinAction = hitObj?.userData.cabinAction as CabinSubPart['action'] | undefined;
       if (cabinAction) {
@@ -1868,12 +1915,32 @@ export const DB5Viewport: React.FC<DB5ViewportProps> = ({
     let animId = 0;
     let currentExplode = explodeRef.current;
     let currentGunDeploy = gunDeployRef.current;
+    let currentLeftDoorOpen = 0;
+    let currentRightDoorOpen = 0;
     const clock = new THREE.Clock();
 
     const animate = () => {
       animId = requestAnimationFrame(animate);
       const dt = clock.getDelta();
       const elapsed = clock.elapsedTime;
+
+      // Smoothly swing left & right doors open/closed around their A-pillar hinges
+      const targetLeftDoor = leftDoorOpenRef.current ? 1 : 0;
+      const targetRightDoor = rightDoorOpenRef.current ? 1 : 0;
+      currentLeftDoorOpen += (targetLeftDoor - currentLeftDoorOpen) * 0.1;
+      currentRightDoorOpen += (targetRightDoor - currentRightDoorOpen) * 0.1;
+      if (Math.abs(targetLeftDoor - currentLeftDoorOpen) < 0.0005) {
+        currentLeftDoorOpen = targetLeftDoor;
+      }
+      if (Math.abs(targetRightDoor - currentRightDoorOpen) < 0.0005) {
+        currentRightDoorOpen = targetRightDoor;
+      }
+      if (leftDoorPivotRef.current) {
+        leftDoorPivotRef.current.rotation.y = -currentLeftDoorOpen * (Math.PI * 0.36);
+      }
+      if (rightDoorPivotRef.current) {
+        rightDoorPivotRef.current.rotation.y = currentRightDoorOpen * (Math.PI * 0.36);
+      }
 
       // Smoothly lerp gun deployment & firing recoil
       currentGunDeploy += (gunDeployRef.current - currentGunDeploy) * 0.14;
